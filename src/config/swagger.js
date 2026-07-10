@@ -42,7 +42,7 @@ const options = {
         description: "Local Development Server",
       },
       {
-        url: "https://api.safewalkcampus.com",
+        url: "https://synap-circle.onrender.com",
         description: "Production Server",
       },
     ],
