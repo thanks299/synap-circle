@@ -1,0 +1,585 @@
+import brevo from "@getbrevo/brevo";
+import crypto from "node:crypto";
+import OTP from "../models/OTP.js";
+import User from "../models/User.js";
+import { logger } from "../utils/logger.js";
+
+class EmailService {
+  constructor() {
+    // Initialize Brevo
+    this.apiInstance = new brevo.TransactionalEmailsApi();
+    this.apiKey = brevo.ApiClient.instance.authentications["api-key"];
+    this.apiKey.apiKey = process.env.BREVO_API_KEY;
+
+    this.senderName = process.env.BREVO_FROM_NAME || "SafeWalk Campus";
+    this.fromEmail = process.env.BREVO_FROM_EMAIL;
+  }
+
+  // OTP METHODS
+  /**
+   * Generate a random 6-digit OTP using crypto for better security
+   */
+  generateOTP() {
+    const otp = crypto.randomInt(100000, 999999);
+    return otp.toString();
+  }
+
+  /**
+   * Send OTP via Email
+   */
+  async sendOTP(email, phoneNumber, purpose = "signup") {
+    try {
+      const otpCode = this.generateOTP();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      /**
+       * Create the OTP record up-front, before branching on test vs. live
+       *  sending. Previously this only happened inside the test branch,
+       * which meant the live (Brevo) branch referenced an `otp` variable
+       * that was never defined — a guaranteed ReferenceError the first time
+       *  a real email was sent in production.
+       */
+      const otp = await OTP.create({
+        phoneNumber,
+        email,
+        otpCode,
+        expiresAt,
+        purpose,
+        isUsed: false,
+      });
+
+      if (
+        process.env.NODE_ENV === "test" &&
+        process.env.DISABLE_EMAIL_SENDING === "true"
+      ) {
+        console.log(`📧 [TEST] OTP for ${email}: ${otpCode}`);
+
+        return {
+          success: true,
+          message: "OTP sent successfully to your email", // Consistent message for tests
+          otpId: otp._id,
+          development_otp: otpCode,
+        };
+      }
+
+      // Send email via Brevo
+      const sendSmtpEmail = new brevo.SendSmtpEmail();
+      sendSmtpEmail.subject = "SafeWalk Campus - Your OTP Code";
+      sendSmtpEmail.htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f5f5; padding: 20px; margin: 0; }
+            .container { max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; padding: 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .header { text-align: center; margin-bottom: 30px; }
+            .logo { font-size: 28px; font-weight: bold; color: #ff4444; }
+            .subtitle { color: #666; font-size: 16px; margin-top: 5px; }
+            .otp-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px; text-align: center; margin: 25px 0; }
+            .otp-code { font-size: 42px; font-weight: bold; letter-spacing: 12px; color: #ffffff; font-family: 'Courier New', monospace; }
+            .info { background-color: #f8f9fa; border-radius: 8px; padding: 15px; margin: 20px 0; }
+            .info p { margin: 5px 0; color: #555; }
+            .warning { color: #ff9800; font-size: 14px; text-align: center; margin-top: 20px; }
+            .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="logo">🛡️ SafeWalk Campus</div>
+              <div class="subtitle">Your Security is Our Priority</div>
+            </div>
+            
+            <h2 style="text-align: center; color: #333; margin-bottom: 10px;">Verification Code</h2>
+            <p style="text-align: center; color: #666; margin-bottom: 20px;">Use the following OTP to verify your account:</p>
+            
+            <div class="otp-box">
+              <div class="otp-code">${otpCode}</div>
+            </div>
+            
+            <div class="info">
+              <p><strong>📱 Phone:</strong> ${phoneNumber}</p>
+              <p><strong>⏰ Expires in:</strong> 10 minutes</p>
+            </div>
+            
+            <p style="text-align: center; color: #666;">If you didn't request this code, please ignore this email.</p>
+            <div class="warning">⚠️ Never share this OTP with anyone</div>
+            
+            <div class="footer">
+              <p>SafeWalk Campus - Emergency Alert System</p>
+              <p>This is an automated message. Please do not reply.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      sendSmtpEmail.textContent = `
+        SafeWalk Campus - Verification Code
+        
+        Your OTP code is: ${otpCode}
+        
+        Phone: ${phoneNumber}
+        Expires in: 10 minutes
+        
+        If you didn't request this, please ignore this email.
+        Never share this OTP with anyone.
+        
+        SafeWalk Campus - Emergency Alert System
+        This is an automated message. Please do not reply.
+      `;
+      sendSmtpEmail.sender = {
+        name: this.senderName,
+        email: this.fromEmail,
+      };
+      sendSmtpEmail.to = [{ email, name: phoneNumber }];
+      sendSmtpEmail.replyTo = {
+        email: this.fromEmail,
+        name: "SafeWalk Campus Support",
+      };
+
+      const result = await this.apiInstance.sendTransacEmail(sendSmtpEmail);
+
+      logger.info(`OTP email sent to ${email}: ${result.messageId}`);
+      console.log(`📧 OTP for ${email}: ${otpCode}`);
+
+      return {
+        success: true,
+        message: "OTP sent successfully via email",
+        otpId: otp._id,
+        development_otp: otpCode,
+      };
+    } catch (error) {
+      logger.error("OTP email send error:", error);
+      throw new Error("Failed to send OTP via email. Please try again.");
+    }
+  }
+
+  /**
+   * Verify OTP using email
+   */
+  async verifyOTP(email, otpCode) {
+    try {
+      /**
+       * Check the user exists FIRST. Previously this checked the OTP record
+       *  first, so a nonexistent email (no OTP record either) always threw
+       * "Invalid or expired OTP" and the route's 404 "User not found" branch was never reached.
+       */
+      const user = await User.findOne({ email });
+
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      // Find valid OTP by email
+      const otp = await OTP.findOne({
+        email,
+        otpCode,
+        isUsed: false,
+        expiresAt: { $gt: new Date() },
+      });
+
+      if (!otp) {
+        throw new Error("Invalid or expired OTP");
+      }
+
+      // Mark OTP as used
+      otp.isUsed = true;
+      await otp.save();
+
+      // Mark user as verified
+      user.isVerified = true;
+      user.lastLogin = new Date();
+      await user.save();
+
+      return {
+        success: true,
+        user,
+        message: "OTP verified successfully",
+      };
+    } catch (error) {
+      logger.error("OTP verification error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Resend OTP via Email
+   */
+  async resendOTP(email, phoneNumber, purpose = "signup") {
+    await OTP.updateMany({ phoneNumber, isUsed: false }, { isUsed: true });
+    return this.sendOTP(email, phoneNumber, purpose);
+  }
+
+  // ALERT EMAIL METHODS
+  /**
+   * Generate location URL
+   */
+  _generateLocationUrl(latitude, longitude, locationLink) {
+    return (
+      locationLink ||
+      (latitude && longitude
+        ? `https://www.google.com/maps?q=${latitude},${longitude}`
+        : "Location not available")
+    );
+  }
+
+  /**
+   * Generate Google Maps link HTML
+   */
+  _generateMapsLink(latitude, longitude, locationUrl) {
+    if (latitude && longitude) {
+      return `<a href="${locationUrl}" style="display: inline-block; background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px 0;">📍 View on Google Maps</a>`;
+    }
+    return '<p style="color: #ff9800;">⚠️ Location could not be determined</p>';
+  }
+
+  /**
+   * Generate email subject
+   */
+  _generateSubject(userName, userPhone, isCancelled) {
+    const displayName = userName || userPhone;
+    if (isCancelled) {
+      return `🚨 SOS Alert from ${displayName} - CANCELLED`;
+    }
+    return `🚨 SOS Alert from ${displayName}`;
+  }
+
+  /**
+   * Generate email header section
+   */
+  _generateHeader(isCancelled) {
+    return `
+      <div class="header" style="background: ${isCancelled ? "#ff9800" : "#ff4444"}; color: white; padding: 30px 20px; text-align: center;">
+        <h1 style="margin: 0; font-size: 28px;">${isCancelled ? "✅ ALERT CANCELLED" : "🚨 SOS EMERGENCY ALERT"}</h1>
+        <div class="sub" style="font-size: 16px; opacity: 0.9; margin-top: 8px;">${isCancelled ? "This alert has been cancelled by the user" : "Immediate attention required"}</div>
+      </div>
+    `;
+  }
+
+  /**
+   * Generate user info section
+   */
+  _generateUserInfo(userName, userPhone, userEmail) {
+    let html = `
+      <div class="info-box" style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #ff4444;">
+        <label style="font-weight: bold; color: #555; display: block; margin-bottom: 4px; font-size: 14px;">👤 User</label>
+        <div class="value" style="font-size: 16px; color: #222;"><strong>${userName || "Unknown User"}</strong></div>
+    `;
+
+    if (userPhone) {
+      html += `<div class="value" style="font-size: 16px; color: #222; margin-top: 4px;">📞 ${userPhone}</div>`;
+    }
+    if (userEmail) {
+      html += `<div class="value" style="font-size: 16px; color: #222; margin-top: 4px;">✉️ ${userEmail}</div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  /**
+   * Generate alert status section
+   */
+  _generateStatusSection(isCancelled) {
+    const statusColor = isCancelled ? "#ff9800" : "#ff4444";
+    let html = `
+      <div class="info-box" style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 20px; border-left: 4px solid ${statusColor};">
+        <label style="font-weight: bold; color: #555; display: block; margin-bottom: 4px; font-size: 14px;">⚠️ Alert Status</label>
+        <div class="value" style="font-size: 16px; color: #222;">
+          <span class="status-badge" style="display: inline-block; background: ${statusColor}; color: white; padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">${isCancelled ? "CANCELLED" : "ACTIVE"}</span>
+        </div>
+    `;
+
+    if (!isCancelled) {
+      html += `<p style="color: #d32f2f; margin-top: 8px;"><strong>⚠️ If this is a false alarm, the user can cancel it from the app.</strong></p>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  /**
+   * Generate location section
+   */
+  _generateLocationSection(latitude, longitude, mapsLink) {
+    let html = `
+      <div class="alert-box" style="background: #ffebee; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #c62828;">📍 Location Information</h3>
+        ${mapsLink}
+    `;
+
+    if (latitude && longitude) {
+      html += `
+        <p style="margin-top: 8px; font-size: 14px; color: #666;">
+          Coordinates: ${latitude}, ${longitude}
+        </p>
+      `;
+    } else {
+      html +=
+        '<p style="color: #ff9800;">⚠️ Location could not be determined</p>';
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  /**
+   * Generate recipients section
+   */
+  _generateRecipientsSection(contacts) {
+    const recipientItems = contacts
+      .map(
+        (c) => `
+        <div class="recipient" style="padding: 5px 0; border-bottom: 1px solid #e0e0e0;">
+          <strong>${c.name || "Unknown"}</strong>
+          <span style="color: #666; font-size: 14px;">(${c.relationship || c.type || "Contact"})</span>
+        </div>
+      `,
+      )
+      .join("");
+
+    return `
+      <div class="recipients" style="background: #f5f5f5; padding: 10px; border-radius: 5px; margin: 10px 0;">
+        <h4 style="margin-top: 0;">📨 This alert was sent to:</h4>
+        ${recipientItems}
+      </div>
+    `;
+  }
+
+  /**
+   * Generate action buttons
+   */
+  _generateActions(isCancelled, userPhone, locationUrl) {
+    let html = `<div class="actions" style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">`;
+
+    if (!isCancelled && userPhone) {
+      html += `
+        <a href="tel:${userPhone}" class="action-button action-call" style="flex: 1; min-width: 120px; padding: 10px 20px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; text-align: center; text-decoration: none; display: inline-block; background: #4CAF50; color: white;">📞 Call User</a>
+      `;
+    }
+
+    html += `
+      <a href="${locationUrl}" target="_blank" class="action-button action-sms" style="flex: 1; min-width: 120px; padding: 10px 20px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; text-align: center; text-decoration: none; display: inline-block; background: #2196F3; color: white;">📍 View Location</a>
+    </div>`;
+
+    return html;
+  }
+
+  /**
+   * Generate footer
+   */
+  _generateFooter(alertId) {
+    return `
+      <div class="footer" style="background: #f8f9fa; padding: 20px; text-align: center; font-size: 14px; color: #666; border-top: 1px solid #e0e0e0;">
+        <p style="margin: 0;">SafeWalk Campus - Emergency Alert System</p>
+        <p style="margin: 5px 0 0; font-size: 12px;">Alert ID: ${alertId || "N/A"}</p>
+        <p style="margin: 5px 0 0; font-size: 12px;">This is an automated message from SafeWalk Campus. Please do not reply.</p>
+      </div>
+    `;
+  }
+
+  /**
+   * Build complete HTML email
+   */
+  _buildAlertEmailHTML(alertData) {
+    const {
+      userName,
+      userPhone,
+      userEmail,
+      latitude,
+      longitude,
+      locationLink,
+      contacts,
+      alertId,
+      isCancelled = false,
+      timestamp,
+    } = alertData;
+
+    const locationUrl = this._generateLocationUrl(
+      latitude,
+      longitude,
+      locationLink,
+    );
+    const mapsLink = this._generateMapsLink(latitude, longitude, locationUrl);
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; }
+          .content { padding: 30px 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          ${this._generateHeader(isCancelled)}
+          <div class="content">
+            ${this._generateStatusSection(isCancelled)}
+            ${this._generateUserInfo(userName, userPhone, userEmail)}
+            <div class="info-box" style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #ff4444;">
+              <label style="font-weight: bold; color: #555; display: block; margin-bottom: 4px; font-size: 14px;">🕐 Time</label>
+              <div class="value" style="font-size: 16px; color: #222;">${timestamp || new Date().toLocaleString()}</div>
+            </div>
+            ${this._generateLocationSection(latitude, longitude, mapsLink)}
+            ${this._generateRecipientsSection(contacts)}
+            ${this._generateActions(isCancelled, userPhone, locationUrl)}
+          </div>
+          ${this._generateFooter(alertId)}
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  /**
+   * Build plain text alert email
+   */
+  _buildAlertPlainText(alertData) {
+    const {
+      userName,
+      userPhone,
+      userEmail,
+      latitude,
+      longitude,
+      locationLink,
+      contacts,
+      alertId,
+      isCancelled = false,
+      timestamp,
+    } = alertData;
+
+    const locationUrl = this._generateLocationUrl(
+      latitude,
+      longitude,
+      locationLink,
+    );
+    const statusText = isCancelled
+      ? "✅ ALERT CANCELLED"
+      : "🚨 SOS EMERGENCY ALERT";
+    const statusMsg = isCancelled
+      ? "This alert has been cancelled by the user"
+      : "Immediate attention required";
+
+    return `
+      ${statusText}
+      ${statusMsg}
+      
+      ${userName ? `User: ${userName}` : ""}
+      ${userPhone ? `Phone: ${userPhone}` : ""}
+      ${userEmail ? `Email: ${userEmail}` : ""}
+      Time: ${timestamp || new Date().toLocaleString()}
+      
+      Location: ${locationUrl}
+      ${latitude && longitude ? `Coordinates: ${latitude}, ${longitude}` : "Location not available"}
+      
+      This alert was sent to:
+      ${contacts.map((c) => `- ${c.name} (${c.relationship || "Contact"})`).join("\n")}
+      
+      ${isCancelled ? "" : "⚠️ If this is a false alarm, the user can cancel it from the app."}
+      
+      ---
+      SafeWalk Campus - Emergency Alert System
+      Alert ID: ${alertId || "N/A"}
+      This is an automated message. Please do not reply.
+    `.trim();
+  }
+
+  /**
+   * Send SOS alert email to a single recipient
+   */
+  async sendSOSAlert(alertData) {
+    if (
+      process.env.NODE_ENV === "test" &&
+      process.env.DISABLE_EMAIL_SENDING === "true"
+    ) {
+      const { contacts } = alertData;
+      return {
+        success: true,
+        messageId: "test-message-id",
+        recipients: contacts.map((c) => c.email),
+      };
+    }
+    try {
+      const { contacts, isCancelled = false, userName, userPhone } = alertData;
+
+      const recipients = contacts.map((contact) => ({
+        email: contact.email,
+        name: contact.name || contact.email,
+      }));
+
+      const subject = this._generateSubject(userName, userPhone, isCancelled);
+      const htmlContent = this._buildAlertEmailHTML(alertData);
+      const textContent = this._buildAlertPlainText(alertData);
+
+      const sendSmtpEmail = new brevo.SendSmtpEmail();
+      sendSmtpEmail.subject = subject;
+      sendSmtpEmail.htmlContent = htmlContent;
+      sendSmtpEmail.textContent = textContent;
+      sendSmtpEmail.sender = {
+        name: this.senderName,
+        email: this.fromEmail,
+      };
+      sendSmtpEmail.to = recipients;
+      sendSmtpEmail.replyTo = {
+        email: this.fromEmail,
+        name: "SafeWalk Campus Support",
+      };
+
+      const response = await this.apiInstance.sendTransacEmail(sendSmtpEmail);
+
+      logger.info(`Alert email sent successfully: ${response.messageId}`);
+
+      return {
+        success: true,
+        messageId: response.messageId,
+        recipients: recipients.map((r) => r.email),
+      };
+    } catch (error) {
+      logger.error("Alert email send error:", error);
+      throw new Error(`Failed to send alert email: ${error.message}`);
+    }
+  }
+
+  /**
+   * Send bulk SOS alerts to multiple recipients
+   */
+  async sendBulkSOSAlerts(alertData) {
+    try {
+      const { contacts, ...baseData } = alertData;
+
+      const results = [];
+      for (const contact of contacts) {
+        try {
+          const result = await this.sendSOSAlert({
+            ...baseData,
+            contacts: [contact],
+          });
+          results.push({
+            contact,
+            success: true,
+            messageId: result.messageId,
+          });
+        } catch (error) {
+          results.push({
+            contact,
+            success: false,
+            error: error.message,
+          });
+        }
+      }
+
+      return results;
+    } catch (error) {
+      logger.error("Bulk alert email send error:", error);
+      throw error;
+    }
+  }
+}
+
+export default new EmailService();
