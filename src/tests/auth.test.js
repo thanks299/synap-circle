@@ -28,7 +28,6 @@ describe("Authentication API Tests", () => {
         "message",
         "OTP sent successfully to your email",
       );
-      expect(response.body).toHaveProperty("otpId");
       expect(response.body).toHaveProperty("development_otp");
 
       // Verify OTP was saved in database

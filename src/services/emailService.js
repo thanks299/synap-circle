@@ -39,7 +39,7 @@ class EmailService {
        * that was never defined — a guaranteed ReferenceError the first time
        *  a real email was sent in production.
        */
-      const otp = await OTP.create({
+      await OTP.create({
         phoneNumber,
         email,
         otpCode,
@@ -56,8 +56,7 @@ class EmailService {
 
         return {
           success: true,
-          message: "OTP sent successfully to your email", // Consistent message for tests
-          otpId: otp._id,
+          message: "OTP sent successfully to your email",
           development_otp: otpCode,
         };
       }
@@ -147,7 +146,6 @@ class EmailService {
       return {
         success: true,
         message: "OTP sent successfully via email",
-        otpId: otp._id,
         development_otp: otpCode,
       };
     } catch (error) {

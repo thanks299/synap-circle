@@ -42,7 +42,7 @@ const options = {
         description: "Local Development Server",
       },
       {
-        url: "https://synap-circle.onrender.com",
+        url: "https://api.safewalkcampus.com",
         description: "Production Server",
       },
     ],
@@ -205,6 +205,12 @@ const options = {
             message: {
               type: "string",
               example: "OTP verified successfully",
+            },
+            development_otp: {
+              type: "string",
+              example: "123456",
+              description:
+                "⚠️ ONLY AVAILABLE IN DEVELOPMENT/TEST ENVIRONMENTS. Never exposed in production.",
             },
             token: {
               type: "string",

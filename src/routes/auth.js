@@ -36,12 +36,6 @@ const router = express.Router();
  *                 message:
  *                   type: string
  *                   example: OTP sent successfully to your email
- *                 otpId:
- *                   type: string
- *                   example: 507f1f77bcf86cd799439011
- *                 development_otp:
- *                   type: string
- *                   example: 123456
  *       400:
  *         description: Validation error or user already exists
  *       429:
@@ -64,10 +58,6 @@ router.post(
       }
 
       // Check if this email is already tied to a DIFFERENT phone number.
-      // We only block on identity conflicts, not on verification status —
-      // otherwise an unverified pending signup could be hijacked by another
-      // phone number, and a genuinely re-submitted signup (same email +
-      // phone, already verified) would be incorrectly blocked too.
       const existingEmail = await User.findOne({ email });
       if (existingEmail && existingEmail.phoneNumber !== phoneNumber) {
         return res.status(400).json({
@@ -89,7 +79,6 @@ router.post(
       let user = existingPhone || existingEmail;
 
       if (user && !user.isVerified) {
-        // Update existing unverified user
         user.name = name || user.name;
         user.email = email || user.email;
         user.phoneNumber = phoneNumber || user.phoneNumber;
@@ -102,21 +91,20 @@ router.post(
           isVerified: false,
         });
       }
-      // If `user` exists, is already verified, and email+phone match the
-      // existing record exactly, we fall through here and just resend an
-      // OTP for that same identity (e.g. re-authenticating in tests/helpers).
 
       // Send OTP via email
       const result = await emailService.sendOTP(email, phoneNumber, "signup");
-
-      res.status(200).json({
+      const isDevelopment = process.env.NODE_ENV !== "production";
+      const response = {
         success: true,
         message: result.message || "OTP sent successfully to your email",
-        otpId: result.otpId,
-        ...(result.development_otp && {
-          development_otp: result.development_otp,
-        }),
-      });
+      };
+
+      if (isDevelopment && result.development_otp) {
+        response.development_otp = result.development_otp;
+      }
+
+      res.status(200).json(response);
     } catch (error) {
       next(error);
     }
@@ -235,6 +223,15 @@ router.post(
  *     responses:
  *       200:
  *         description: OTP resent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
  *       404:
  *         description: Email not found
  *       429:
@@ -248,7 +245,6 @@ router.post(
     try {
       const { email } = req.body;
 
-      // Check if user exists
       const user = await User.findOne({ email });
       if (!user) {
         return res.status(404).json({
@@ -258,15 +254,18 @@ router.post(
       }
 
       const result = await emailService.resendOTP(email, user.phoneNumber);
+      const isDevelopment = process.env.NODE_ENV !== "production";
 
-      res.status(200).json({
+      const response = {
         success: true,
         message: "OTP resent successfully to your email",
-        otpId: result.otpId,
-        ...(result.development_otp && {
-          development_otp: result.development_otp,
-        }),
-      });
+      };
+
+      if (isDevelopment && result.development_otp) {
+        response.development_otp = result.development_otp;
+      }
+
+      res.status(200).json(response);
     } catch (error) {
       next(error);
     }
