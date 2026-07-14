@@ -1,6 +1,7 @@
+import "dotenv/config";
+
 import express from "express";
 import mongoose from "mongoose";
-import dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
@@ -16,7 +17,6 @@ import { globalLimiter } from "./src/middlewares/rateLimiter.js";
 import { logger } from "./src/utils/logger.js";
 
 const app = express();
-dotenv.config();
 
 // Connect to MongoDB function
 const connectDB = async () => {
@@ -38,7 +38,7 @@ app.use(
   cors({
     origin:
       process.env.NODE_ENV === "production"
-        ? ["https://safewalkcampus.com"]
+        ? ["https://synap-circle.onrender.com"]
         : "*",
     credentials: true,
   }),

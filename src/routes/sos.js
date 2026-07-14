@@ -4,6 +4,7 @@ import { authenticate } from "../middlewares/auth.js";
 import { validate, sosValidation } from "../middlewares/validator.js";
 import { sosLimiter } from "../middlewares/rateLimiter.js";
 import SOSAlert from "../models/SOSAlert.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 
@@ -45,25 +46,21 @@ router.post(
   authenticate,
   sosLimiter,
   validate(sosValidation.trigger),
-  async (req, res, next) => {
-    try {
-      const { latitude, longitude, locationAvailable = true } = req.body;
-      const userId = req.userId;
+  asyncHandler(async (req, res) => {
+    const { latitude, longitude, locationAvailable = true } = req.body;
+    const userId = req.userId;
 
-      const result = await sosService.triggerSOS(userId, {
-        latitude,
-        longitude,
-        locationAvailable,
-      });
+    const result = await sosService.triggerSOS(userId, {
+      latitude,
+      longitude,
+      locationAvailable,
+    });
 
-      res.status(200).json({
-        success: true,
-        ...result,
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
+    res.status(200).json({
+      success: true,
+      ...result,
+    });
+  }),
 );
 
 /**
@@ -122,22 +119,18 @@ router.post(
   "/cancel/:alertId",
   authenticate,
   validate(sosValidation.cancel),
-  async (req, res, next) => {
-    try {
-      const { alertId } = req.params;
-      const { reason = "false_alarm" } = req.body;
-      const userId = req.userId;
+  asyncHandler(async (req, res) => {
+    const { alertId } = req.params;
+    const { reason = "false_alarm" } = req.body;
+    const userId = req.userId;
 
-      const result = await sosService.cancelSOS(alertId, userId, reason);
+    const result = await sosService.cancelSOS(alertId, userId, reason);
 
-      res.status(200).json({
-        success: true,
-        ...result,
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
+    res.status(200).json({
+      success: true,
+      ...result,
+    });
+  }),
 );
 
 /**
@@ -178,8 +171,10 @@ router.post(
  *       401:
  *         description: Unauthorized
  */
-router.get("/history", authenticate, async (req, res, next) => {
-  try {
+router.get(
+  "/history",
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { limit = 20, offset = 0, status } = req.query;
     const userId = req.userId;
 
@@ -193,10 +188,8 @@ router.get("/history", authenticate, async (req, res, next) => {
       success: true,
       ...result,
     });
-  } catch (error) {
-    next(error);
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -232,8 +225,10 @@ router.get("/history", authenticate, async (req, res, next) => {
  *       404:
  *         description: Alert not found
  */
-router.get("/history/:alertId", authenticate, async (req, res, next) => {
-  try {
+router.get(
+  "/history/:alertId",
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { alertId } = req.params;
     const userId = req.userId;
 
@@ -243,10 +238,8 @@ router.get("/history/:alertId", authenticate, async (req, res, next) => {
       success: true,
       alert,
     });
-  } catch (error) {
-    next(error);
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -293,12 +286,13 @@ router.get("/history/:alertId", authenticate, async (req, res, next) => {
  *       404:
  *         description: Alert not found
  */
-router.get("/status/:alertId", authenticate, async (req, res, next) => {
-  try {
+router.get(
+  "/status/:alertId",
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { alertId } = req.params;
     const userId = req.userId;
 
-    // Get the alert from database directly for quick status check
     const alert = await SOSAlert.findOne({ _id: alertId, userId }).select(
       "status createdAt updatedAt",
     );
@@ -310,24 +304,15 @@ router.get("/status/:alertId", authenticate, async (req, res, next) => {
       });
     }
 
-    // Check if cancellation is allowed (within 5 minutes)
-    const canCancel =
-      alert.status === "sent" &&
-      (Date.now() - new Date(alert.createdAt)) / 60000 < 5;
-
     res.status(200).json({
       success: true,
       status: alert.status,
-      canCancel: canCancel,
-      cancellationTimeRemaining: canCancel
-        ? 5 - (Date.now() - new Date(alert.createdAt)) / 60000
-        : 0,
+      canCancel: alert.canCancel(),
+      cancellationTimeRemaining: alert.getCancellationTimeRemaining(),
       createdAt: alert.createdAt,
       updatedAt: alert.updatedAt,
     });
-  } catch (error) {
-    next(error);
-  }
-});
+  }),
+);
 
 export default router;

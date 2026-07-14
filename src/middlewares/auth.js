@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import { logger } from "../utils/logger.js";
+import config from "../utils/config.js";
 
 /**
  * Authentication middleware - verify JWT token
@@ -18,7 +19,7 @@ const authenticate = async (req, res, next) => {
     }
 
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, config.jwtSecret);
 
     // Find user
     const user = await User.findById(decoded.userId);
@@ -101,8 +102,6 @@ const hasPermission = (permission) => {
       });
     }
 
-    // Check if user has the required permission
-    // This assumes your User model has a permissions array
     if (!req.user.permissions?.includes(permission)) {
       return res.status(403).json({
         success: false,

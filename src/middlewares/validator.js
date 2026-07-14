@@ -1,17 +1,16 @@
 import { body, validationResult } from "express-validator";
+import { PHONE_REGEX, EMAIL_REGEX } from "../utils/regex.js";
 
 // Validation rules
 const validatePhoneNumber = (value) => {
-  const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-  if (!phoneRegex.test(value)) {
+  if (!PHONE_REGEX.test(value)) {
     throw new Error("Invalid phone number format");
   }
   return true;
 };
 
 const validateEmail = (value) => {
-  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-  if (!emailRegex.test(value)) {
+  if (!EMAIL_REGEX.test(value)) {
     throw new Error("Invalid email format");
   }
   return true;
@@ -81,6 +80,64 @@ const authValidation = {
       .isEmail()
       .withMessage("Please enter a valid email"),
   ],
+
+  forgotPassword: [
+    body("email")
+      .notEmpty()
+      .withMessage("Email is required")
+      .isEmail()
+      .withMessage("Please enter a valid email address")
+      .normalizeEmail(),
+  ],
+
+  verifyResetOTP: [
+    body("email")
+      .notEmpty()
+      .withMessage("Email is required")
+      .isEmail()
+      .withMessage("Please enter a valid email"),
+    body("otpCode")
+      .notEmpty()
+      .withMessage("OTP code is required")
+      .isLength({ min: 6, max: 6 })
+      .withMessage("OTP must be 6 digits")
+      .isNumeric()
+      .withMessage("OTP must be numeric"),
+  ],
+
+  resetPassword: [
+    body("resetToken").notEmpty().withMessage("Reset token is required"),
+    body("newPassword")
+      .notEmpty()
+      .withMessage("New password is required")
+      .isLength({ min: 8 })
+      .withMessage("Password must be at least 8 characters long")
+      .matches(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/)
+      .withMessage("Password must contain at least one letter and one number"),
+    body("confirmPassword")
+      .notEmpty()
+      .withMessage("Please confirm your password")
+      .custom((value, { req }) => value === req.body.newPassword)
+      .withMessage("Passwords do not match"),
+  ],
+
+  changePassword: [
+    body("currentPassword")
+      .notEmpty()
+      .withMessage("Current password is required"),
+    body("newPassword")
+      .notEmpty()
+      .withMessage("New password is required")
+      .isLength({ min: 8 })
+      .withMessage("Password must be at least 8 characters long")
+      .matches(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/)
+      .withMessage("Password must contain at least one letter and one number"),
+    body("confirmPassword")
+      .notEmpty()
+      .withMessage("Please confirm your password")
+      .custom((value, { req }) => value === req.body.newPassword)
+      .withMessage("Passwords do not match"),
+  ],
 };
 
 const contactValidation = {
@@ -97,7 +154,7 @@ const contactValidation = {
     body("email")
       .notEmpty()
       .withMessage("Email is required")
-      .isEmail() // Use built-in validator instead of custom
+      .isEmail()
       .withMessage("Please enter a valid email address"),
     body("relationship")
       .notEmpty()
@@ -164,11 +221,6 @@ const validate = (validations) => {
       message: error.msg,
     }));
 
-    // Surface the first field-level message as the top-level `message` so
-    // callers (and tests) that check for a specific reason like
-    // "Email is required" get something more useful than a generic
-    // "Validation failed". The full list of field errors is still returned
-    // in `errors` for clients that want to display all of them.
     return res.status(400).json({
       success: false,
       message: formattedErrors[0]?.message || "Validation failed",

@@ -56,7 +56,6 @@ const options = {
         },
       },
       schemas: {
-        // Shared Response Shapes
         ApiResponse: {
           type: "object",
           properties: {
@@ -108,8 +107,6 @@ const options = {
             },
           },
         },
-
-        // User Profile
         User: {
           type: "object",
           properties: {
@@ -144,8 +141,6 @@ const options = {
             },
           },
         },
-
-        // Auth Request Bodies
         SignupRequest: {
           type: "object",
           required: ["email", "phoneNumber"],
@@ -192,6 +187,70 @@ const options = {
             phoneNumber: {
               type: "string",
               example: "+1234567890",
+            },
+          },
+        },
+        ForgotPasswordRequest: {
+          type: "object",
+          required: ["email"],
+          properties: {
+            email: {
+              type: "string",
+              format: "email",
+              example: "student@campus.edu",
+            },
+          },
+        },
+        VerifyResetOTPRequest: {
+          type: "object",
+          required: ["email", "otpCode"],
+          properties: {
+            email: {
+              type: "string",
+              format: "email",
+              example: "student@campus.edu",
+            },
+            otpCode: {
+              type: "string",
+              example: "123456",
+            },
+          },
+        },
+        ResetPasswordRequest: {
+          type: "object",
+          required: ["resetToken", "newPassword", "confirmPassword"],
+          properties: {
+            resetToken: {
+              type: "string",
+              example: "eyJhbGciOiJIUzI1NiIs...",
+            },
+            newPassword: {
+              type: "string",
+              minLength: 8,
+              example: "NewPassword123",
+            },
+            confirmPassword: {
+              type: "string",
+              example: "NewPassword123",
+            },
+          },
+        },
+        ChangePasswordRequest: {
+          type: "object",
+          required: ["currentPassword", "newPassword", "confirmPassword"],
+          properties: {
+            currentPassword: {
+              type: "string",
+              example: "OldPassword123",
+            },
+            newPassword: {
+              type: "string",
+              minLength: 8,
+              example: "NewPassword456",
+            },
+            confirmPassword: {
+              type: "string",
+              example: "NewPassword456",
             },
           },
         },

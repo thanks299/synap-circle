@@ -1,3 +1,5 @@
+import config from "./config.js";
+
 const constants = {
   // Contact relationship types
   CONTACT_RELATIONSHIPS: {
@@ -46,12 +48,10 @@ const constants = {
     USER_ERROR: "user_error",
   },
 
-  // Configuration
-  MAX_TRUSTED_CONTACTS: Number.parseInt(process.env.MAX_TRUSTED_CONTACTS) || 3,
-  CANCELLATION_WINDOW_MINUTES:
-    Number.parseInt(process.env.CANCELLATION_WINDOW_MINUTES) || 5,
-  OTP_EXPIRY_MINUTES: 10,
-  SOS_TIMEOUT_SECONDS: Number.parseInt(process.env.SOS_TIMEOUT_SECONDS) || 5,
+  MAX_TRUSTED_CONTACTS: config.maxTrustedContacts,
+  CANCELLATION_WINDOW_MINUTES: config.cancellationWindowMinutes,
+  OTP_EXPIRY_MINUTES: config.otpExpiryMinutes,
+  SOS_TIMEOUT_SECONDS: config.sosTimeoutSeconds,
 
   // Messages
   MESSAGES: {
@@ -61,7 +61,7 @@ const constants = {
     CONTACT_ADDED: "Contact added successfully",
     CONTACT_UPDATED: "Contact updated successfully",
     CONTACT_DELETED: "Contact deleted successfully",
-    CONTACT_LIMIT_REACHED: `Maximum trusted contacts reached (${Number.parseInt(process.env.MAX_TRUSTED_CONTACTS) || 3})`,
+    CONTACT_LIMIT_REACHED: `Maximum trusted contacts reached (${config.maxTrustedContacts})`,
     SOS_TRIGGERED: "SOS alert triggered successfully",
     SOS_CANCELLED: "SOS alert cancelled successfully",
     SOS_CANNOT_CANCEL:

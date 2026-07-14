@@ -3,19 +3,19 @@ import crypto from "node:crypto";
 import OTP from "../models/OTP.js";
 import User from "../models/User.js";
 import { logger } from "../utils/logger.js";
+import config from "../utils/config.js";
 
 class EmailService {
   constructor() {
     // Initialize Brevo
     this.apiInstance = new brevo.TransactionalEmailsApi();
     this.apiKey = brevo.ApiClient.instance.authentications["api-key"];
-    this.apiKey.apiKey = process.env.BREVO_API_KEY;
+    this.apiKey.apiKey = config.brevo.apiKey;
 
-    this.senderName = process.env.BREVO_FROM_NAME || "SafeWalk Campus";
-    this.fromEmail = process.env.BREVO_FROM_EMAIL;
+    this.senderName = config.brevo.fromName;
+    this.fromEmail = config.brevo.fromEmail;
   }
 
-  // OTP METHODS
   /**
    * Generate a random 6-digit OTP using crypto for better security
    */
@@ -30,7 +30,9 @@ class EmailService {
   async sendOTP(email, phoneNumber, purpose = "signup") {
     try {
       const otpCode = this.generateOTP();
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      const expiresAt = new Date(
+        Date.now() + config.otpExpiryMinutes * 60 * 1000,
+      );
 
       /**
        * Create the OTP record up-front, before branching on test vs. live
@@ -48,11 +50,10 @@ class EmailService {
         isUsed: false,
       });
 
-      if (
-        process.env.NODE_ENV === "test" &&
-        process.env.DISABLE_EMAIL_SENDING === "true"
-      ) {
-        console.log(`📧 [TEST] OTP for ${email}: ${otpCode}`);
+      if (config.isTest && config.disableEmailSending === true) {
+        if (config.isDevelopment) {
+          console.log(`📧 [TEST] OTP for ${email}: ${otpCode}`);
+        }
 
         return {
           success: true,
@@ -100,7 +101,7 @@ class EmailService {
             
             <div class="info">
               <p><strong>📱 Phone:</strong> ${phoneNumber}</p>
-              <p><strong>⏰ Expires in:</strong> 10 minutes</p>
+              <p><strong>⏰ Expires in:</strong> ${config.otpExpiryMinutes} minutes</p>
             </div>
             
             <p style="text-align: center; color: #666;">If you didn't request this code, please ignore this email.</p>
@@ -120,7 +121,7 @@ class EmailService {
         Your OTP code is: ${otpCode}
         
         Phone: ${phoneNumber}
-        Expires in: 10 minutes
+        Expires in: ${config.otpExpiryMinutes} minutes
         
         If you didn't request this, please ignore this email.
         Never share this OTP with anyone.
@@ -141,12 +142,14 @@ class EmailService {
       const result = await this.apiInstance.sendTransacEmail(sendSmtpEmail);
 
       logger.info(`OTP email sent to ${email}: ${result.messageId}`);
-      console.log(`📧 OTP for ${email}: ${otpCode}`);
+      if (config.isDevelopment) {
+        console.log(`📧 OTP for ${email}: ${otpCode}`);
+      }
 
       return {
         success: true,
         message: "OTP sent successfully via email",
-        development_otp: otpCode,
+        ...(config.isDevelopment && { development_otp: otpCode }),
       };
     } catch (error) {
       logger.error("OTP email send error:", error);
@@ -210,7 +213,6 @@ class EmailService {
     return this.sendOTP(email, phoneNumber, purpose);
   }
 
-  // ALERT EMAIL METHODS
   /**
    * Generate location URL
    */
@@ -492,10 +494,7 @@ class EmailService {
    * Send SOS alert email to a single recipient
    */
   async sendSOSAlert(alertData) {
-    if (
-      process.env.NODE_ENV === "test" &&
-      process.env.DISABLE_EMAIL_SENDING === "true"
-    ) {
+    if (config.isTest && config.disableEmailSending) {
       const { contacts } = alertData;
       return {
         success: true,
@@ -571,10 +570,201 @@ class EmailService {
           });
         }
       }
-
       return results;
     } catch (error) {
       logger.error("Bulk alert email send error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send password reset OTP via Email
+   */
+  async sendPasswordResetOTP(email, phoneNumber, userName) {
+    try {
+      const otpCode = this.generateOTP();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      // Create OTP record for password reset
+      const otp = await OTP.create({
+        phoneNumber,
+        email,
+        otpCode,
+        expiresAt,
+        purpose: "reset_password",
+        isPasswordReset: true,
+        isUsed: false,
+      });
+
+      if (config.isTest && config.disableEmailSending) {
+        console.log(`📧 [TEST] Password Reset OTP for ${email}: ${otpCode}`);
+        return {
+          success: true,
+          message: "Password reset OTP sent successfully",
+          development_otp: otpCode,
+          resetId: otp._id,
+        };
+      }
+
+      // Send email via Brevo
+      const sendSmtpEmail = new brevo.SendSmtpEmail();
+      sendSmtpEmail.subject = "SafeWalk Campus - Password Reset";
+      sendSmtpEmail.htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f5f5; padding: 20px; margin: 0; }
+            .container { max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; padding: 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .header { text-align: center; margin-bottom: 30px; }
+            .logo { font-size: 28px; font-weight: bold; color: #ff4444; }
+            .subtitle { color: #666; font-size: 16px; margin-top: 5px; }
+            .otp-box { background: linear-gradient(135deg, #ff6b6b 0%, #c0392b 100%); padding: 30px; border-radius: 12px; text-align: center; margin: 25px 0; }
+            .otp-code { font-size: 42px; font-weight: bold; letter-spacing: 12px; color: #ffffff; font-family: 'Courier New', monospace; }
+            .info { background-color: #f8f9fa; border-radius: 8px; padding: 15px; margin: 20px 0; }
+            .info p { margin: 5px 0; color: #555; }
+            .warning { color: #ff9800; font-size: 14px; text-align: center; margin-top: 20px; }
+            .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px; }
+            .user-name { color: #333; font-weight: 600; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="logo">🛡️ SafeWalk Campus</div>
+              <div class="subtitle">Password Reset</div>
+            </div>
+            
+            <h2 style="text-align: center; color: #333; margin-bottom: 10px;">Reset Your Password</h2>
+            ${userName ? `<p style="text-align: center; color: #666; margin-bottom: 20px;">Hello <span class="user-name">${userName}</span>,</p>` : ""}
+            <p style="text-align: center; color: #666; margin-bottom: 20px;">We received a request to reset your password. Use the following OTP to verify your identity:</p>
+            
+            <div class="otp-box">
+              <div class="otp-code">${otpCode}</div>
+            </div>
+            
+            <div class="info">
+              <p><strong>📱 Phone:</strong> ${phoneNumber}</p>
+              <p><strong>⏰ Expires in:</strong> 10 minutes</p>
+              <p><strong>🔐 Purpose:</strong> Password Reset</p>
+            </div>
+            
+            <p style="text-align: center; color: #666;">If you didn't request a password reset, please ignore this email or contact support.</p>
+            <div class="warning">⚠️ Never share this OTP with anyone</div>
+            
+            <div class="footer">
+              <p>SafeWalk Campus - Emergency Alert System</p>
+              <p>This is an automated message. Please do not reply.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      sendSmtpEmail.textContent = `
+        SafeWalk Campus - Password Reset
+
+        ${userName ? `Hello ${userName},` : ""}
+
+        We received a request to reset your password. Your OTP code is: ${otpCode}
+
+        Phone: ${phoneNumber}
+        Expires in: 10 minutes
+        Purpose: Password Reset
+
+        If you didn't request a password reset, please ignore this email.
+        Never share this OTP with anyone.
+
+        SafeWalk Campus - Emergency Alert System
+        This is an automated message. Please do not reply.
+      `;
+      sendSmtpEmail.sender = {
+        name: this.senderName,
+        email: this.fromEmail,
+      };
+      sendSmtpEmail.to = [{ email, name: userName || phoneNumber }];
+      sendSmtpEmail.replyTo = {
+        email: this.fromEmail,
+        name: "SafeWalk Campus Support",
+      };
+
+      const result = await this.apiInstance.sendTransacEmail(sendSmtpEmail);
+
+      logger.info(`Password reset OTP sent to ${email}: ${result.messageId}`);
+      console.log(`📧 Password Reset OTP for ${email}: ${otpCode}`);
+
+      return {
+        success: true,
+        message: "Password reset OTP sent successfully",
+        development_otp: otpCode,
+        resetId: otp._id,
+      };
+    } catch (error) {
+      logger.error("Password reset OTP send error:", error);
+      throw new Error("Failed to send password reset OTP. Please try again.");
+    }
+  }
+
+  /**
+   * Verify password reset OTP
+   */
+  async verifyPasswordResetOTP(email, otpCode) {
+    try {
+      // Find user
+      const user = await User.findOne({ email });
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      // Find valid reset OTP
+      const otp = await OTP.findOne({
+        email,
+        otpCode,
+        purpose: "reset_password",
+        isUsed: false,
+        expiresAt: { $gt: new Date() },
+      });
+
+      if (!otp) {
+        // Check if OTP exists but is expired
+        const expiredOTP = await OTP.findOne({
+          email,
+          otpCode,
+          purpose: "reset_password",
+          isUsed: false,
+        });
+
+        if (expiredOTP && expiredOTP.expiresAt <= new Date()) {
+          throw new Error("OTP has expired. Please request a new one.");
+        }
+
+        throw new Error("Invalid or expired OTP");
+      }
+
+      // Mark OTP as used
+      otp.isUsed = true;
+      await otp.save();
+
+      // Invalidate any other reset OTPs for this user
+      await OTP.updateMany(
+        {
+          email,
+          purpose: "reset_password",
+          isUsed: false,
+          _id: { $ne: otp._id },
+        },
+        { isUsed: true },
+      );
+
+      return {
+        success: true,
+        user,
+        resetId: otp._id,
+        message: "OTP verified successfully",
+      };
+    } catch (error) {
+      logger.error("Password reset OTP verification error:", error);
       throw error;
     }
   }

@@ -1,6 +1,7 @@
 import express from "express";
 import EmergencyDirectory from "../models/EmergencyDirectory.js";
 import { authenticate } from "../middlewares/auth.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 
@@ -50,8 +51,10 @@ const router = express.Router();
  *       401:
  *         description: Unauthorized
  */
-router.get("/directory", authenticate, async (req, res, next) => {
-  try {
+router.get(
+  "/directory",
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { type, search } = req.query;
 
     // Build query
@@ -88,10 +91,8 @@ router.get("/directory", authenticate, async (req, res, next) => {
       contacts,
       grouped: grouped,
     });
-  } catch (error) {
-    next(error);
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -126,8 +127,10 @@ router.get("/directory", authenticate, async (req, res, next) => {
  *       404:
  *         description: Emergency contact not found
  */
-router.get("/directory/:id", authenticate, async (req, res, next) => {
-  try {
+router.get(
+  "/directory/:id",
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { id } = req.params;
 
     const contact = await EmergencyDirectory.findOne({
@@ -146,10 +149,8 @@ router.get("/directory/:id", authenticate, async (req, res, next) => {
       success: true,
       contact,
     });
-  } catch (error) {
-    next(error);
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -206,8 +207,10 @@ router.get("/directory/:id", authenticate, async (req, res, next) => {
  *       401:
  *         description: Unauthorized
  */
-router.get("/nearby", authenticate, async (req, res, next) => {
-  try {
+router.get(
+  "/nearby",
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { latitude, longitude, radius = 5000, type } = req.query;
 
     if (!latitude || !longitude) {
@@ -245,9 +248,7 @@ router.get("/nearby", authenticate, async (req, res, next) => {
       total: contacts.length,
       contacts,
     });
-  } catch (error) {
-    next(error);
-  }
-});
+  }),
+);
 
 export default router;

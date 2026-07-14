@@ -1,17 +1,17 @@
+import { PHONE_REGEX, EMAIL_REGEX } from "./regex.js";
+
 /**
  * Phone number validation
  */
 const isValidPhoneNumber = (phoneNumber) => {
-  const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-  return phoneRegex.test(phoneNumber);
+  return PHONE_REGEX.test(phoneNumber);
 };
 
 /**
  * Email validation
  */
 const isValidEmail = (email) => {
-  const emailRegex = /^\S+@\S+\.\S+$/;
-  return emailRegex.test(email);
+  return EMAIL_REGEX.test(email);
 };
 
 /**
@@ -58,18 +58,11 @@ const isValidRelationship = (relationship) => {
 };
 
 /**
- * Sanitize phone number (remove spaces, special characters)
- * Removes: spaces, hyphens, parentheses, and other common separators
+ * Sanitize phone number (remove spaces, hyphens, parentheses, and other
+ * common separators)
  */
 const sanitizePhoneNumber = (phoneNumber) => {
   return phoneNumber.replaceAll(/[\s\-()]/g, "");
-};
-
-/**
- * Sanitize phone number - Alternative using replace (if replaceAll is not available)
- */
-const sanitizePhoneNumberLegacy = (phoneNumber) => {
-  return phoneNumber.replace(/[\s\-()]/g, "");
 };
 
 /**
@@ -126,7 +119,6 @@ const sanitizeInput = (input) => {
 /**
  * Validate password strength
  * At least 8 characters, 1 uppercase, 1 lowercase, 1 number
- * Uses \d for digits (concise character class)
  */
 const isStrongPassword = (password) => {
   if (!password || password.length < 8) return false;
@@ -145,10 +137,9 @@ const isAlphaSpace = (str) => {
 
 /**
  * Validate if a string contains only alphanumeric characters
- * Uses \d for digits (concise character class)
  */
 const isAlphanumeric = (str) => {
-  return /^[a-zA-Z\d]+$/.test(str); // Fixed: use \d instead of [0-9]
+  return /^[a-zA-Z\d]+$/.test(str);
 };
 
 /**
@@ -190,7 +181,7 @@ const isValidTime = (time) => {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
 };
 
-export {
+const validators = {
   isValidPhoneNumber,
   isValidEmail,
   isValidName,
@@ -199,7 +190,6 @@ export {
   isValidOTP,
   isValidRelationship,
   sanitizePhoneNumber,
-  sanitizePhoneNumberLegacy,
   sanitizeEmail,
   sanitizeInput,
   isEmpty,
@@ -216,7 +206,7 @@ export {
   truncateString,
 };
 
-export default {
+export {
   isValidPhoneNumber,
   isValidEmail,
   isValidName,
@@ -225,7 +215,6 @@ export default {
   isValidOTP,
   isValidRelationship,
   sanitizePhoneNumber,
-  sanitizePhoneNumberLegacy,
   sanitizeEmail,
   sanitizeInput,
   isEmpty,
@@ -241,3 +230,5 @@ export default {
   isValidTime,
   truncateString,
 };
+
+export default validators;

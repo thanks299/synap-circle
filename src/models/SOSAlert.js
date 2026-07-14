@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import config from "../utils/config.js";
 
 const sosAlertSchema = new mongoose.Schema(
   {
@@ -101,10 +102,8 @@ sosAlertSchema.methods.canCancel = function () {
   const now = new Date();
   const created = new Date(this.createdAt);
   const minutesPassed = (now - created) / 60000;
-  const windowMinutes =
-    Number.parseInt(process.env.CANCELLATION_WINDOW_MINUTES) || 5;
 
-  return minutesPassed <= windowMinutes;
+  return minutesPassed <= config.cancellationWindowMinutes;
 };
 
 // Method to get time remaining for cancellation
@@ -113,11 +112,9 @@ sosAlertSchema.methods.getCancellationTimeRemaining = function () {
 
   const now = new Date();
   const created = new Date(this.createdAt);
-  const windowMinutes =
-    Number.parseInt(process.env.CANCELLATION_WINDOW_MINUTES) || 5;
   const elapsed = (now - created) / 60000;
 
-  return Math.max(0, windowMinutes - elapsed);
+  return Math.max(0, config.cancellationWindowMinutes - elapsed);
 };
 
 export default mongoose.model("SOSAlert", sosAlertSchema);

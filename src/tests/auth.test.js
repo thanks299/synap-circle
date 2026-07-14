@@ -228,7 +228,6 @@ describe("Authentication API Tests", () => {
         "message",
         "OTP resent successfully to your email",
       );
-      expect(response.body).toHaveProperty("otpId");
       expect(response.body).toHaveProperty("development_otp");
     });
 

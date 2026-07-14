@@ -37,8 +37,16 @@ const otpSchema = new mongoose.Schema(
     },
     purpose: {
       type: String,
-      enum: ["signup", "login", "reset"],
+      enum: ["signup", "login", "reset", "reset_password"],
       default: "signup",
+    },
+    isPasswordReset: {
+      type: Boolean,
+      default: false,
+    },
+    pendingPassword: {
+      type: String,
+      select: false,
     },
   },
   {
@@ -50,5 +58,23 @@ const otpSchema = new mongoose.Schema(
 otpSchema.index({ phoneNumber: 1, otpCode: 1 });
 otpSchema.index({ email: 1 });
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+otpSchema.index({ purpose: 1, isUsed: 1 });
+
+// Method to check if OTP is valid for password reset
+otpSchema.methods.isValidForPasswordReset = function () {
+  return (
+    this.purpose === "reset_password" &&
+    !this.isUsed &&
+    this.expiresAt > new Date()
+  );
+};
+
+// Pre-save middleware to ensure reset OTPs are properly handled
+otpSchema.pre("save", function (next) {
+  if (this.purpose === "reset_password" && !this.isPasswordReset) {
+    this.isPasswordReset = true;
+  }
+  next();
+});
 
 export default mongoose.model("OTP", otpSchema);

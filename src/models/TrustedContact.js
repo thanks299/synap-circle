@@ -1,4 +1,6 @@
 import mongoose from "mongoose";
+import { PHONE_REGEX, EMAIL_REGEX } from "../utils/regex.js";
+import config from "../utils/config.js";
 
 const trustedContactSchema = new mongoose.Schema(
   {
@@ -18,14 +20,14 @@ const trustedContactSchema = new mongoose.Schema(
       type: String,
       required: [true, "Phone number is required"],
       trim: true,
-      match: [/^\+?[1-9]\d{1,14}$/, "Please enter a valid phone number"],
+      match: [PHONE_REGEX, "Please enter a valid phone number"],
     },
     email: {
       type: String,
       required: [true, "Email is required for alerts"],
       trim: true,
       lowercase: true,
-      match: [/^\S+@\S+\.\S+$/, "Please enter a valid email"],
+      match: [EMAIL_REGEX, "Please enter a valid email"],
     },
     relationship: {
       type: String,
@@ -64,11 +66,9 @@ trustedContactSchema.pre("save", async function (next) {
     _id: { $ne: this._id },
   });
 
-  const MAX_CONTACTS = Number.parseInt(process.env.MAX_TRUSTED_CONTACTS) || 3;
-
-  if (count >= MAX_CONTACTS) {
+  if (count >= config.maxTrustedContacts) {
     const error = new Error(
-      `You can only have up to ${MAX_CONTACTS} trusted contacts`,
+      `You can only have a maximum of ${config.maxTrustedContacts} active trusted contacts.`,
     );
     error.statusCode = 400;
     return next(error);

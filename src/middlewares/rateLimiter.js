@@ -1,11 +1,7 @@
 import rateLimit from "express-rate-limit";
+import config from "../utils/config.js";
 
-// All limiters are skipped when DISABLE_RATE_LIMITING is set, rather than
-// whenever NODE_ENV === "test". This lets individual tests (e.g. the
-// "too many SOS triggers" 429 test) temporarily flip rate limiting back on
-// for just that test, while every other test keeps it off by default via
-// setup.js setting process.env.DISABLE_RATE_LIMITING = "true".
-const shouldSkip = () => process.env.DISABLE_RATE_LIMITING === "true";
+const shouldSkip = () => config.disableRateLimiting;
 
 // General API rate limiter
 const apiLimiter = rateLimit({
@@ -52,6 +48,10 @@ const sosLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use user ID if authenticated, otherwise IP
+    return req.userId || req.ip;
+  },
   skip: shouldSkip,
 });
 

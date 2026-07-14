@@ -6,6 +6,8 @@ import { authenticate } from "../middlewares/auth.js";
 import { validate, contactValidation } from "../middlewares/validator.js";
 import { contactLimiter } from "../middlewares/rateLimiter.js";
 import { logger } from "../utils/logger.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import config from "../utils/config.js";
 
 const router = express.Router();
 
@@ -113,14 +115,12 @@ router.get("/", authenticate, async (req, res, next) => {
       .select("-__v")
       .sort({ isPrimary: -1, createdAt: 1 });
 
-    const maxContacts = Number.parseInt(process.env.MAX_TRUSTED_CONTACTS) || 3;
-
     res.status(200).json({
       success: true,
       contacts,
       count: contacts.length,
-      maxContacts,
-      canAddMore: contacts.length < maxContacts,
+      maxContacts: config.maxTrustedContacts,
+      canAddMore: contacts.length < config.maxTrustedContacts,
     });
   } catch (error) {
     next(error);
@@ -169,65 +169,55 @@ router.post(
   contactLimiter,
   validate(contactValidation.create),
   async (req, res, next) => {
-    try {
-      const { name, phoneNumber, email, relationship } = req.body;
-      const userId = req.userId;
+    const { name, phoneNumber, email, relationship } = req.body;
+    const userId = req.userId;
 
-      // Check max contacts limit
-      const existingContacts = await TrustedContact.countDocuments({
-        userId,
-        isActive: true,
+    // Check max contacts limit
+    const existingContacts = await TrustedContact.countDocuments({
+      userId,
+      isActive: true,
+    });
+
+    if (existingContacts >= config.maxTrustedContacts) {
+      return res.status(400).json({
+        success: false,
+        message: `You can only have up to ${config.maxTrustedContacts} trusted contacts`,
+        maxContacts: config.maxTrustedContacts,
       });
-      const maxContacts =
-        Number.parseInt(process.env.MAX_TRUSTED_CONTACTS) || 3;
-
-      if (existingContacts >= maxContacts) {
-        return res.status(400).json({
-          success: false,
-          message: `You can only have up to ${maxContacts} trusted contacts`,
-          maxContacts,
-        });
-      }
-
-      // Check if contact already exists
-      const existingContact = await TrustedContact.findOne({
-        userId,
-        phoneNumber,
-        isActive: true,
-      });
-
-      if (existingContact) {
-        return res.status(409).json({
-          success: false,
-          message: "Contact already exists",
-          contact: existingContact,
-        });
-      }
-
-      // If this is the first contact, make it primary
-      const isPrimary = existingContacts === 0;
-
-      const contact = await TrustedContact.create({
-        userId,
-        name,
-        phoneNumber,
-        email,
-        relationship,
-        isPrimary,
-      });
-
-      logger.info(
-        `New trusted contact added for user ${userId}: ${phoneNumber}`,
-      );
-
-      res.status(201).json({
-        success: true,
-        message: "Contact added successfully",
-        contact,
-      });
-    } catch (error) {
-      next(error);
     }
+    // Check if contact already exists
+    const existingContact = await TrustedContact.findOne({
+      userId,
+      phoneNumber,
+      isActive: true,
+    });
+
+    if (existingContact) {
+      return res.status(409).json({
+        success: false,
+        message: "Contact already exists",
+        contact: existingContact,
+      });
+    }
+
+    // If this is the first contact, make it primary
+    const isPrimary = existingContacts === 0;
+    const contact = await TrustedContact.create({
+      userId,
+      name,
+      phoneNumber,
+      email,
+      relationship,
+      isPrimary,
+    });
+
+    logger.info(`New trusted contact added for user ${userId}: ${phoneNumber}`);
+
+    res.status(201).json({
+      success: true,
+      message: "Contact added successfully",
+      contact,
+    });
   },
 );
 
@@ -288,65 +278,56 @@ router.put(
   "/:contactId",
   authenticate,
   validate(contactValidation.update),
-  async (req, res, next) => {
-    try {
-      const { contactId } = req.params;
-      const { name, phoneNumber, email, relationship, isPrimary } = req.body;
-      const userId = req.userId;
+  asyncHandler(async (req, res) => {
+    const { contactId } = req.params;
+    const { name, phoneNumber, email, relationship, isPrimary } = req.body;
+    const userId = req.userId;
 
-      // Find contact
-      const contact = await findActiveContact(userId, contactId);
+    // Find contact
+    const contact = await findActiveContact(userId, contactId);
 
-      if (!contact) {
-        return res.status(404).json({
-          success: false,
-          message: "Contact not found",
-        });
-      }
+    if (!contact) {
+      return res.status(404).json({
+        success: false,
+        message: "Contact not found",
+      });
+    }
 
-      // Check if phone number is being changed and if it conflicts
-      if (phoneNumber && phoneNumber !== contact.phoneNumber) {
-        const existingContact = await ensureUniquePhoneNumber(
-          userId,
-          contactId,
-          phoneNumber,
-        );
-
-        if (existingContact) {
-          return res.status(409).json({
-            success: false,
-            message: "Another contact with this phone number already exists",
-          });
-        }
-      }
-
-      // Update contact
-      if (name) contact.name = name;
-      if (phoneNumber) contact.phoneNumber = phoneNumber;
-      if (email) contact.email = email;
-      if (relationship) contact.relationship = relationship;
-
-      // Handle primary contact logic
-      await syncPrimaryContactAfterUpdate(
+    // Check if phone number is being changed and if it conflicts
+    if (phoneNumber && phoneNumber !== contact.phoneNumber) {
+      const existingContact = await ensureUniquePhoneNumber(
         userId,
         contactId,
-        contact,
-        isPrimary,
+        phoneNumber,
       );
 
-      await contact.save();
-
-      logger.info(`Contact ${contactId} updated for user ${userId}`);
-
-      res.status(200).json({
-        success: true,
-        message: "Contact updated successfully",
-        contact,
-      });
-    } catch (error) {
-      next(error);
+      if (existingContact) {
+        return res.status(409).json({
+          success: false,
+          message: "Another contact with this phone number already exists",
+        });
+      }
     }
-  },
+
+    // Update contact
+    if (name) contact.name = name;
+    if (phoneNumber) contact.phoneNumber = phoneNumber;
+    if (email) contact.email = email;
+    if (relationship) contact.relationship = relationship;
+
+    // Handle primary contact logic
+    await syncPrimaryContactAfterUpdate(userId, contactId, contact, isPrimary);
+
+    await contact.save();
+
+    logger.info(`Contact ${contactId} updated for user ${userId}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Contact updated successfully",
+      contact,
+    });
+  }),
 );
 
 /**
@@ -382,8 +363,10 @@ router.put(
  *       404:
  *         description: Contact not found
  */
-router.delete("/:contactId", authenticate, async (req, res, next) => {
-  try {
+router.delete(
+  "/:contactId",
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { contactId } = req.params;
     const userId = req.userId;
 
@@ -416,10 +399,8 @@ router.delete("/:contactId", authenticate, async (req, res, next) => {
       success: true,
       message: "Contact deleted successfully",
     });
-  } catch (error) {
-    next(error);
-  }
-});
+  }),
+);
 
 /**
  * @swagger
@@ -449,8 +430,10 @@ router.delete("/:contactId", authenticate, async (req, res, next) => {
  *       401:
  *         description: Unauthorized
  */
-router.get("/campus-security", authenticate, async (req, res, next) => {
-  try {
+router.get(
+  "/campus-security",
+  authenticate,
+  asyncHandler(async (req, res) => {
     const securityContacts = await CampusSecurity.find({
       isActive: true,
     })
@@ -462,9 +445,7 @@ router.get("/campus-security", authenticate, async (req, res, next) => {
       securityContacts,
       count: securityContacts.length,
     });
-  } catch (error) {
-    next(error);
-  }
-});
+  }),
+);
 
 export default router;
