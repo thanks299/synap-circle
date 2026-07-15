@@ -52,13 +52,29 @@ router.post(
   validate(authValidation.signup),
   asyncHandler(async (req, res, next) => {
     try {
-      const { email, phoneNumber, name } = req.body;
+      const { email, phoneNumber, name, password } = req.body;
 
       // Validate email is provided
       if (!email) {
         return res.status(400).json({
           success: false,
           message: "Email is required for OTP verification.",
+        });
+      }
+
+      if (!password) {
+        return res.status(400).json({
+          success: false,
+          message: "Password is required.",
+        });
+      }
+
+      const passwordPattern = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/;
+      if (!passwordPattern.test(password)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Password must be at least 8 characters long and contain at least one letter and one number.",
         });
       }
 
@@ -83,16 +99,22 @@ router.post(
       // Find or create user
       let user = existingPhone || existingEmail;
 
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
       if (user && !user.isVerified) {
         user.name = name || user.name;
         user.email = email || user.email;
         user.phoneNumber = phoneNumber || user.phoneNumber;
+        user.password = hashedPassword;
+        user.lastPasswordChange = new Date();
         await user.save();
       } else if (!user) {
         await User.create({
           email,
           phoneNumber,
           name: name || "",
+          password: hashedPassword,
           isVerified: false,
         });
       }
@@ -109,6 +131,107 @@ router.post(
       }
 
       res.status(200).json(response);
+    } catch (error) {
+      next(error);
+    }
+  }),
+);
+
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: Login with email and password
+ *     description: Authenticates a user with email and password, returns a JWT token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       400:
+ *         description: No password set on this account
+ *       401:
+ *         description: Invalid credentials
+ *       403:
+ *         description: Account deactivated
+ *       429:
+ *         description: Too many attempts
+ */
+router.post(
+  "/login",
+  authLimiter,
+  validate(authValidation.login),
+  asyncHandler(async (req, res, next) => {
+    try {
+      const { email, password } = req.body;
+
+      const user = await User.findOne({ email }).select("+password");
+
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid email or password.",
+        });
+      }
+
+      if (!user.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: "Account is deactivated. Please contact support.",
+        });
+      }
+
+      if (!user.password) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "No password set for this account yet. Log in with OTP and set a password from your profile, or use forgot-password.",
+        });
+      }
+
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid email or password.",
+        });
+      }
+
+      const token = jwt.sign(
+        { userId: user._id, email: user.email },
+        config.jwtSecret,
+        { expiresIn: config.jwtExpiresIn || "7d" },
+      );
+
+      user.lastLogin = new Date();
+      await user.save();
+
+      res.status(200).json({
+        success: true,
+        message: "Login successful",
+        token,
+        user: {
+          id: user._id,
+          phoneNumber: user.phoneNumber,
+          name: user.name,
+          email: user.email,
+          isVerified: user.isVerified,
+        },
+      });
     } catch (error) {
       next(error);
     }
@@ -166,7 +289,7 @@ router.post(
       const token = jwt.sign(
         { userId: result.user._id, email: result.user.email },
         config.jwtSecret,
-        { expiresIn: config.jwtExpire || "7d" },
+        { expiresIn: config.jwtExpiresIn || "7d" },
       );
 
       // Update last login
@@ -506,11 +629,10 @@ router.post(
         user.name,
       );
 
-      const isDevelopment = process.env.NODE_ENV !== "production";
       const response = {
         success: true,
         message: "Password reset OTP sent to your email.",
-        resetId: result.resetId, // For tracking the reset session
+        resetId: result.resetId,
       };
 
       if (isDevelopment && result.development_otp) {
