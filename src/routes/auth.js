@@ -14,6 +14,230 @@ import config from "../utils/config.js";
 
 const router = express.Router();
 
+const STEP_ORDER = [
+  "welcome",
+  "location",
+  "university",
+  "contacts",
+  "complete",
+];
+
+// Helper: Validate step existence
+const validateStep = (step) => {
+  if (!STEP_ORDER.includes(step)) {
+    throw new Error("Invalid onboarding step");
+  }
+};
+
+// Helper: Check if forward navigation is allowed
+const canNavigateForward = (currentIndex, targetIndex) => {
+  return targetIndex <= currentIndex + 1 || currentIndex === -1;
+};
+
+// Helper: Build navigation response
+const buildNavigationResponse = (targetIndex, isComplete) => {
+  const canGoBack = targetIndex > 0;
+  const canGoForward = targetIndex < STEP_ORDER.length - 1 && !isComplete;
+  const previousStep = targetIndex > 0 ? STEP_ORDER[targetIndex - 1] : null;
+  const nextStep =
+    targetIndex < STEP_ORDER.length - 1 ? STEP_ORDER[targetIndex + 1] : null;
+
+  return { canGoBack, canGoForward, previousStep, nextStep };
+};
+
+// Helper Process university data
+const processUniversityData = async (data, userId) => {
+  const updateData = {};
+
+  if (!data.universityId) {
+    return updateData;
+  }
+
+  try {
+    const University = mongoose.model("University");
+    const university = await University.findById(data.universityId);
+    if (university) {
+      updateData.universityId = data.universityId;
+      updateData.selectedUniversity = university.name;
+    }
+  } catch (error) {
+    logger.error(
+      `Failed to resolve university ${data.universityId} for user ${userId}:`,
+      error,
+    );
+    if (data.selectedUniversity) {
+      updateData.selectedUniversity = data.selectedUniversity;
+    }
+  }
+
+  return updateData;
+};
+
+// Helper: Process location data
+const processLocationData = (user, data) => {
+  if (data.location?.latitude && data.location?.longitude) {
+    if (!user.preferences) user.preferences = {};
+    user.preferences.onboardingLocation = {
+      latitude: data.location.latitude,
+      longitude: data.location.longitude,
+      updatedAt: new Date(),
+    };
+    return true;
+  }
+  return false;
+};
+
+// Helper Validate completion prerequisites
+const validateCompletionPrerequisites = async (userId, targetIndex) => {
+  const contactsIndex = STEP_ORDER.indexOf("contacts");
+
+  if (targetIndex >= contactsIndex) {
+    const contactCount = await TrustedContact.countDocuments({
+      userId: userId,
+      isActive: true,
+    });
+
+    if (contactCount === 0) {
+      return {
+        isValid: false,
+        message:
+          "Please add at least one trusted contact before completing onboarding",
+        requiredStep: "contacts",
+        contactCount: 0,
+      };
+    }
+  }
+
+  return { isValid: true };
+};
+
+// Helper: Handle onboarding completion
+const handleOnboardingComplete = async (user) => {
+  if (!user.isVerified) {
+    user.isVerified = true;
+    user.lastLogin = new Date();
+    await user.save();
+
+    logger.info(`User ${user._id} completed onboarding and is now verified`);
+
+    if (emailService.sendOnboardingCompleteEmail) {
+      Promise.resolve(emailService.sendOnboardingCompleteEmail(user)).catch(
+        (err) => {
+          logger.error("Onboarding completion email failed:", err);
+        },
+      );
+    }
+  }
+};
+
+const buildUserResponse = (user) => {
+  const response = {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    phoneNumber: user.phoneNumber,
+    isVerified: user.isVerified,
+    onboardingStep: user.onboardingStep,
+  };
+
+  if (user.selectedUniversity) {
+    response.selectedUniversity = user.selectedUniversity;
+  }
+  if (user.universityId) {
+    response.universityId = user.universityId;
+  }
+
+  return response;
+};
+
+const resolveStepNavigation = (user, step) => {
+  const currentIndex = STEP_ORDER.indexOf(user.onboardingStep);
+  const targetIndex = STEP_ORDER.indexOf(step);
+
+  if (!canNavigateForward(currentIndex, targetIndex)) {
+    const nextStep = STEP_ORDER[currentIndex + 1] || "complete";
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        success: false,
+        message: `Please complete steps in order. Next step: ${nextStep}`,
+        currentStep: user.onboardingStep,
+        nextStep: nextStep,
+      },
+    };
+  }
+
+  return { ok: true, currentIndex, targetIndex };
+};
+
+// Helper: Log warnings for missing optional data ahead of completion
+const logMissingOptionalData = (user, userId) => {
+  const hasLocationData = user.preferences?.onboardingLocation;
+  const hasUniversityData = user.universityId || user.selectedUniversity;
+
+  if (!hasLocationData && user.onboardingStep !== "complete") {
+    logger.info(`User ${userId} completing onboarding without location data`);
+  }
+  if (!hasUniversityData && user.onboardingStep !== "complete") {
+    logger.info(`User ${userId} completing onboarding without university data`);
+  }
+};
+
+const checkCompletionPrerequisites = async (
+  user,
+  userId,
+  step,
+  targetIndex,
+) => {
+  if (step !== "complete" || targetIndex <= 0) {
+    return { ok: true };
+  }
+
+  const validation = await validateCompletionPrerequisites(userId, targetIndex);
+  if (!validation.isValid) {
+    return {
+      ok: false,
+      status: 400,
+      body: { success: false, ...validation },
+    };
+  }
+
+  logMissingOptionalData(user, userId);
+  return { ok: true };
+};
+
+const buildStepUpdateData = async (step, data, user, userId) => {
+  const updateData = { onboardingStep: step };
+
+  if (step === "university" && data.universityId) {
+    Object.assign(updateData, await processUniversityData(data, userId));
+  }
+
+  if (step === "location") {
+    const locationUpdated = processLocationData(user, data);
+    if (locationUpdated) {
+      await user.save();
+    }
+  }
+
+  return updateData;
+};
+
+// Helper: Fetch contact count/limit summary if the step requires it
+const getContactSummary = async (userId, targetIndex, contactsIndex) => {
+  if (targetIndex < contactsIndex) {
+    return null;
+  }
+
+  const count = await TrustedContact.countDocuments({
+    userId: userId,
+    isActive: true,
+  });
+
+  return { count, maxContacts: config.maxTrustedContacts };
+};
+
 /**
  * @swagger
  * /api/auth/signup:
@@ -98,6 +322,7 @@ router.post(
 
       // Find or create user
       let user = existingPhone || existingEmail;
+      const isNewUser = !user;
 
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
@@ -121,6 +346,13 @@ router.post(
 
       // Send OTP via email
       const result = await emailService.sendOTP(email, phoneNumber, "signup");
+
+      if (isNewUser) {
+        Promise.resolve(emailService.sendWelcomeEmail(user)).catch((err) => {
+          logger.error("Welcome email sending failed:", err);
+        });
+      }
+
       const response = {
         success: true,
         message: result.message || "OTP sent successfully to your email",
@@ -459,24 +691,94 @@ router.patch(
     body("step")
       .notEmpty()
       .withMessage("Step is required")
-      .isIn(["welcome", "location", "university", "contacts", "complete"])
+      .isIn(STEP_ORDER)
       .withMessage("Invalid onboarding step"),
+    body("data")
+      .optional()
+      .isObject()
+      .withMessage("Data must be an object if provided"),
   ]),
   asyncHandler(async (req, res, next) => {
     try {
-      const { step } = req.body;
+      const { step, data = {} } = req.body;
+      const userId = req.userId;
 
-      const user = await User.findByIdAndUpdate(
-        req.userId,
-        { onboardingStep: step },
-        { new: true },
-      ).select("-__v");
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
 
-      res.status(200).json({
+      try {
+        validateStep(step);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+
+      const navResult = resolveStepNavigation(user, step);
+      if (!navResult.ok) {
+        return res.status(navResult.status).json(navResult.body);
+      }
+      const { targetIndex } = navResult;
+
+      const completionCheck = await checkCompletionPrerequisites(
+        user,
+        userId,
+        step,
+        targetIndex,
+      );
+      if (!completionCheck.ok) {
+        return res.status(completionCheck.status).json(completionCheck.body);
+      }
+
+      const updateData = await buildStepUpdateData(step, data, user, userId);
+
+      const updatedUser = await User.findByIdAndUpdate(userId, updateData, {
+        new: true,
+        runValidators: true,
+      }).select("-__v");
+
+      const isComplete = step === "complete";
+      if (isComplete) {
+        await handleOnboardingComplete(updatedUser);
+      }
+
+      const progress = Math.round(
+        ((targetIndex + 1) / STEP_ORDER.length) * 100,
+      );
+      const navigation = buildNavigationResponse(targetIndex, isComplete);
+
+      const contactsIndex = STEP_ORDER.indexOf("contacts");
+      const contactSummary = await getContactSummary(
+        userId,
+        targetIndex,
+        contactsIndex,
+      );
+
+      logger.info(
+        `Onboarding navigation for user ${userId}: ${user.onboardingStep} → ${step} (${progress}%)`,
+      );
+
+      const response = {
         success: true,
-        message: "Onboarding step updated",
-        step: user.onboardingStep,
-      });
+        message: `Onboarding step updated to: ${step}`,
+        step: updatedUser.onboardingStep,
+        isComplete,
+        progress,
+        ...navigation,
+        user: buildUserResponse(updatedUser),
+      };
+
+      if (contactSummary) {
+        response.contacts = contactSummary;
+      }
+
+      res.status(200).json(response);
     } catch (error) {
       next(error);
     }
@@ -635,7 +937,7 @@ router.post(
         resetId: result.resetId,
       };
 
-       if (config.isDevelopment && result.development_otp) {
+      if (config.isDevelopment && result.development_otp) {
         response.development_otp = result.development_otp;
       }
 

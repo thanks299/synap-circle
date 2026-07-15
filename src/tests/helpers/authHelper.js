@@ -7,15 +7,20 @@ const tokenCache = new Map();
 export const getAuthToken = async (testUser) => {
   const cacheKey = testUser.email;
 
-  // If we already have a cached token for this user, return it
+  // If we already have a cached token for this user and  return it
   if (tokenCache.has(cacheKey)) {
     return tokenCache.get(cacheKey);
   }
 
+  const userWithPassword = {
+    ...testUser,
+    password: testUser.password || "TestPassword123",
+  };
+
   // Create user and get token
   const signupResponse = await request(app)
     .post("/api/auth/signup")
-    .send(testUser)
+    .send(userWithPassword)
     .expect(200);
 
   const otpCode = signupResponse.body.development_otp;

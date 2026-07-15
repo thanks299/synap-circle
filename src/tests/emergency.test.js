@@ -10,6 +10,7 @@ describe("Emergency Directory API Tests", () => {
     email: "emergencytest@campus.edu",
     phoneNumber: "+1234567890",
     name: "Emergency Test User",
+    password: "TestPassword123",
   };
 
   beforeAll(async () => {

@@ -9,6 +9,7 @@ describe("Authentication API Tests", () => {
     email: "test@campus.edu",
     phoneNumber: "+1234567890",
     name: "Test User",
+    password: "TestPassword123",
   };
 
   // Clear auth cache before each test to ensure fresh state
@@ -40,7 +41,10 @@ describe("Authentication API Tests", () => {
     it("should return error for missing email", async () => {
       const response = await request(app)
         .post("/api/auth/signup")
-        .send({ phoneNumber: "+1234567890" })
+        .send({
+          phoneNumber: "+1234567890",
+          password: "TestPassword123",
+        })
         .expect(400);
 
       expect(response.body).toHaveProperty("success", false);
@@ -56,6 +60,7 @@ describe("Authentication API Tests", () => {
         .send({
           email: "invalid-email",
           phoneNumber: "+1234567890",
+          password: "TestPassword123",
         })
         .expect(400);
 
@@ -65,7 +70,6 @@ describe("Authentication API Tests", () => {
     });
 
     it("should return error for duplicate email", async () => {
-      // First signup
       await request(app).post("/api/auth/signup").send(testUser);
 
       // Second signup with same email
@@ -75,6 +79,7 @@ describe("Authentication API Tests", () => {
           email: testUser.email,
           phoneNumber: "+1987654321",
           name: "Another User",
+          password: "TestPassword123",
         })
         .expect(400);
 
@@ -96,6 +101,7 @@ describe("Authentication API Tests", () => {
           email: "another@campus.edu",
           phoneNumber: testUser.phoneNumber,
           name: "Another User",
+          password: "TestPassword123",
         })
         .expect(400);
 

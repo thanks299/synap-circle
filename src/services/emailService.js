@@ -768,6 +768,308 @@ class EmailService {
       throw error;
     }
   }
+
+  /**
+   * Send welcome email to new user
+   */
+  async sendWelcomeEmail(user) {
+    try {
+      if (config.isTest && config.disableEmailSending) {
+        console.log(`📧 [TEST] Welcome email to ${user.email}`);
+        return {
+          success: true,
+          message: "Welcome email sent (test mode)",
+        };
+      }
+
+      const sendSmtpEmail = new brevo.SendSmtpEmail();
+      sendSmtpEmail.subject = "🎉 Welcome to SafeWalk Campus!";
+      sendSmtpEmail.htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f5f5; padding: 20px; margin: 0; }
+          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; padding: 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          .header { text-align: center; margin-bottom: 30px; }
+          .logo { font-size: 28px; font-weight: bold; color: #ff4444; }
+          .subtitle { color: #666; font-size: 16px; margin-top: 5px; }
+          .welcome-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px; text-align: center; margin: 25px 0; color: white; }
+          .welcome-box h2 { margin: 0; font-size: 24px; }
+          .features { background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0; }
+          .feature-item { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #e0e0e0; }
+          .feature-item:last-child { border-bottom: none; }
+          .feature-icon { font-size: 24px; margin-right: 15px; width: 40px; text-align: center; }
+          .feature-text { flex: 1; }
+          .feature-text h4 { margin: 0; color: #333; }
+          .feature-text p { margin: 5px 0 0; color: #666; font-size: 14px; }
+          .cta-button { display: inline-block; background-color: #ff4444; color: white; padding: 14px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 20px; }
+          .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px; }
+          .highlight { color: #ff4444; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="logo">🛡️ SafeWalk Campus</div>
+            <div class="subtitle">Your Security is Our Priority</div>
+          </div>
+          
+          <div class="welcome-box">
+            <h2>👋 Welcome ${user.name || user.phoneNumber}!</h2>
+            <p style="margin: 10px 0 0; opacity: 0.9;">Your campus safety journey begins now</p>
+          </div>
+          
+          <h3 style="color: #333; text-align: center;">Here's what you can do:</h3>
+          
+          <div class="features">
+            <div class="feature-item">
+              <div class="feature-icon">🚨</div>
+              <div class="feature-text">
+                <h4>SOS Panic Button</h4>
+                <p>Instantly alert your trusted contacts and campus security with your live location</p>
+              </div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">👥</div>
+              <div class="feature-text">
+                <h4>Trusted Contacts</h4>
+                <p>Add up to ${config.maxTrustedContacts} trusted contacts to receive your SOS alerts</p>
+              </div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">📍</div>
+              <div class="feature-text">
+                <h4>Live Location Sharing</h4>
+                <p>Share your real-time location during emergencies</p>
+              </div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">🏥</div>
+              <div class="feature-text">
+                <h4>Emergency Directory</h4>
+                <p>Access campus security, hospitals, police, and other emergency contacts</p>
+              </div>
+            </div>
+          </div>
+          
+          <div style="text-align: center; margin: 25px 0;">
+            <p style="color: #666;"><strong>Next Steps:</strong></p>
+            <ol style="text-align: left; display: inline-block; color: #555; padding-left: 20px;">
+              <li>Complete your profile</li>
+              <li>Add your trusted contacts</li>
+              <li>Set up your university campus</li>
+              <li>Enable location sharing</li>
+            </ol>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="https://safewalk-campus.com/app" class="cta-button">🚀 Go to App</a>
+          </div>
+          
+          <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 4px; margin: 20px 0;">
+            <p style="margin: 0; color: #856404;">
+              <strong>💡 Tip:</strong> Keep your app updated and ensure location services are enabled for the best experience.
+            </p>
+          </div>
+          
+          <div class="footer">
+            <p>SafeWalk Campus - Emergency Alert System</p>
+            <p>This is an automated message. Please do not reply.</p>
+            <p style="margin-top: 10px;">
+              <span style="color: #999;">Need help? Contact support: support@safewalk-campus.com</span>
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+      sendSmtpEmail.textContent = `
+      Welcome to SafeWalk Campus!
+
+      Hello ${user.name || user.phoneNumber},
+
+      Your campus safety journey begins now! Here's what you can do:
+
+      1. SOS Panic Button - Instantly alert your trusted contacts and campus security with your live location
+      2. Trusted Contacts - Add up to ${config.maxTrustedContacts} trusted contacts to receive your SOS alerts
+      3. Live Location Sharing - Share your real-time location during emergencies
+      4. Emergency Directory - Access campus security, hospitals, police, and other emergency contacts
+
+      Next Steps:
+      - Complete your profile
+      - Add your trusted contacts
+      - Set up your university campus
+      - Enable location sharing
+
+      💡 Tip: Keep your app updated and ensure location services are enabled for the best experience.
+
+      ---
+      SafeWalk Campus - Emergency Alert System
+      This is an automated message. Please do not reply.
+      Need help? Contact support: support@safewalk-campus.com
+    `;
+      sendSmtpEmail.sender = {
+        name: this.senderName,
+        email: this.fromEmail,
+      };
+      sendSmtpEmail.to = [
+        { email: user.email, name: user.name || user.phoneNumber },
+      ];
+      sendSmtpEmail.replyTo = {
+        email: this.fromEmail,
+        name: "SafeWalk Campus Support",
+      };
+
+      const result = await this.apiInstance.sendTransacEmail(sendSmtpEmail);
+
+      logger.info(`Welcome email sent to ${user.email}: ${result.messageId}`);
+
+      return {
+        success: true,
+        messageId: result.messageId,
+        message: "Welcome email sent successfully",
+      };
+    } catch (error) {
+      logger.error("Welcome email send error:", error);
+      // Don't throw - welcome email failure shouldn't block signup
+      return {
+        success: false,
+        message: "Failed to send welcome email",
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Send onboarding completion email
+   */
+  async sendOnboardingCompleteEmail(user) {
+    try {
+      if (config.isTest && config.disableEmailSending) {
+        console.log(`📧 [TEST] Onboarding complete email to ${user.email}`);
+        return {
+          success: true,
+          message: "Onboarding complete email sent (test mode)",
+        };
+      }
+
+      const sendSmtpEmail = new brevo.SendSmtpEmail();
+      sendSmtpEmail.subject = "🎉 You're Ready to Go! - SafeWalk Campus";
+      sendSmtpEmail.htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f5f5; padding: 20px; margin: 0; }
+          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; padding: 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          .header { text-align: center; margin-bottom: 30px; }
+          .logo { font-size: 28px; font-weight: bold; color: #4CAF50; }
+          .subtitle { color: #666; font-size: 16px; margin-top: 5px; }
+          .complete-box { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); padding: 30px; border-radius: 12px; text-align: center; margin: 25px 0; color: white; }
+          .complete-box h2 { margin: 0; font-size: 24px; }
+          .features { background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin: 20px 0; }
+          .feature-item { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #e0e0e0; }
+          .feature-item:last-child { border-bottom: none; }
+          .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="logo">✅ SafeWalk Campus</div>
+            <div class="subtitle">Your Account is Ready for Action</div>
+          </div>
+          
+          <div class="complete-box">
+            <h2>🎉 Setup Complete!</h2>
+            <p style="margin: 10px 0 0; opacity: 0.9;">You're all set to use SafeWalk Campus</p>
+          </div>
+          
+          <h3 style="color: #333; text-align: center;">You can now:</h3>
+          
+          <div class="features">
+            <div class="feature-item">
+              <span style="font-size: 24px; margin-right: 15px;">🚨</span>
+              <div>
+                <h4 style="margin: 0; color: #333;">Trigger SOS Alerts</h4>
+                <p style="margin: 5px 0 0; color: #666; font-size: 14px;">Instantly alert your trusted contacts and campus security</p>
+              </div>
+            </div>
+            <div class="feature-item">
+              <span style="font-size: 24px; margin-right: 15px;">📍</span>
+              <div>
+                <h4 style="margin: 0; color: #333;">Share Live Location</h4>
+                <p style="margin: 5px 0 0; color: #666; font-size: 14px;">Your location is shared automatically during emergencies</p>
+              </div>
+            </div>
+            <div class="feature-item">
+              <span style="font-size: 24px; margin-right: 15px;">🏥</span>
+              <div>
+                <h4 style="margin: 0; color: #333;">Access Emergency Directory</h4>
+                <p style="margin: 5px 0 0; color: #666; font-size: 14px;">Quick access to campus security, hospitals, and police</p>
+              </div>
+            </div>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <p style="color: #666;">Stay safe! The SafeWalk Campus team is here for you.</p>
+          </div>
+          
+          <div class="footer">
+            <p>SafeWalk Campus - Emergency Alert System</p>
+            <p>This is an automated message. Please do not reply.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+      sendSmtpEmail.textContent = `
+      ✅ Setup Complete!
+
+      You're all set to use SafeWalk Campus!
+
+      You can now:
+      1. Trigger SOS Alerts - Instantly alert your trusted contacts and campus security
+      2. Share Live Location - Your location is shared automatically during emergencies
+      3. Access Emergency Directory - Quick access to campus security, hospitals, and police
+
+      Stay safe! The SafeWalk Campus team is here for you.
+
+      ---
+      SafeWalk Campus - Emergency Alert System
+      This is an automated message. Please do not reply.
+    `;
+      sendSmtpEmail.sender = {
+        name: this.senderName,
+        email: this.fromEmail,
+      };
+      sendSmtpEmail.to = [
+        { email: user.email, name: user.name || user.phoneNumber },
+      ];
+      sendSmtpEmail.replyTo = {
+        email: this.fromEmail,
+        name: "SafeWalk Campus Support",
+      };
+
+      const result = await this.apiInstance.sendTransacEmail(sendSmtpEmail);
+      logger.info(
+        `Onboarding complete email sent to ${user.email}: ${result.messageId}`,
+      );
+
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      logger.error("Onboarding complete email error:", error);
+      return {
+        success: false,
+        message: "Failed to send onboarding complete email",
+      };
+    }
+  }
 }
 
 export default new EmailService();

@@ -13,6 +13,7 @@ describe("Contacts API Tests", () => {
     email: "contacttest@campus.edu",
     phoneNumber: "+1234567890",
     name: "Contact Test User",
+    password: "TestPassword123",
   };
 
   const testContact = {

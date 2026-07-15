@@ -15,6 +15,7 @@ describe("SOS Alert API Tests", () => {
     email: "sostest@campus.edu",
     phoneNumber: "+1234567890",
     name: "SOS Test User",
+    password: "TestPassword123",
   };
 
   const testContact = {
