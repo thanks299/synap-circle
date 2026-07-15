@@ -635,7 +635,7 @@ router.post(
         resetId: result.resetId,
       };
 
-      if (isDevelopment && result.development_otp) {
+       if (config.isDevelopment && result.development_otp) {
         response.development_otp = result.development_otp;
       }
 
