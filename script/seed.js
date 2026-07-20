@@ -26,7 +26,7 @@ const seedData = async () => {
       {
         name: "Campus Security Main Desk",
         phoneNumber: "08134490997",
-        email: "olagokesikiru06@gmail.com",
+        email: "acientguru@gmail.com",
         location: "Main Building, Ground Floor",
         coordinates: {
           type: "Point",
@@ -74,7 +74,7 @@ const seedData = async () => {
         type: "security",
         name: "University Police Department",
         phoneNumber: "08065706129",
-        email: "preciousjohn@gmail.com",
+        email: "pjonyinyechi@gmail.com",
         address: "University Police Station, Campus Road",
         coordinates: {
           type: "Point",

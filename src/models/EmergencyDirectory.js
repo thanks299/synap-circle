@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { EMAIL_REGEX } from "../utils/regex.js";
 
 const emergencyDirectorySchema = new mongoose.Schema(
   {
@@ -16,10 +17,7 @@ const emergencyDirectorySchema = new mongoose.Schema(
       type: String,
       trim: true,
       lowercase: true,
-      match: [
-        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-        "Please fill a valid email address",
-      ],
+      match: [EMAIL_REGEX, "Please enter a valid email"],
     },
     phoneNumber: {
       type: String,
