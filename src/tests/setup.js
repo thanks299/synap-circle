@@ -24,6 +24,18 @@ beforeAll(async () => {
       throw error;
     }
   }
+
+  // Guard against leftover data from a previous run that never reached its
+  // own afterAll cleanup (a hung request, a jest timeout, Ctrl+C, etc). Test
+  // files use fixed, hardcoded emails, so a stale user surviving from an
+  // aborted prior run collides with this run's very first signup and fails
+  // it with a 400 "already registered" before any of this file's own tests
+  // get a chance to run. Wiping here, before this file's tests start, makes
+  // every run self-healing regardless of how the previous one ended.
+  const collections = mongoose.connection.collections;
+  for (const key in collections) {
+    await collections[key].deleteMany();
+  }
 });
 
 // Clean up once at the very end of the whole suite.

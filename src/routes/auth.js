@@ -1,3 +1,5 @@
+// src/routes/auth.js - COMPLETE FIXED VERSION
+
 import express from "express";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
@@ -11,8 +13,66 @@ import { otpLimiter, authLimiter } from "../middlewares/rateLimiter.js";
 import { body } from "express-validator";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import config from "../utils/config.js";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  setAccessTokenCookie,
+  setRefreshTokenCookie,
+  clearTokenCookies,
+  generateCsrfToken,
+  verifyCsrfToken,
+  getRefreshTokenFromCookie,
+  verifyRefreshToken,
+} from "../utils/tokenService.js";
+import { logger } from "../utils/logger.js";
+import mongoose from "mongoose";
+import { OAuth2Client } from "google-auth-library";
 
 const router = express.Router();
+
+const googleClient = new OAuth2Client(config.googleClientId);
+
+// Helper: Verify a Google ID token and return its payload
+const verifyGoogleIdToken = async (idToken) => {
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: config.googleClientId,
+  });
+  return ticket.getPayload();
+};
+
+// Helper: Find an existing user for this Google account, or create one
+const resolveGoogleUser = async (payload) => {
+  const { sub: googleId, email, name, picture, email_verified } = payload;
+
+  let user = await User.findOne({ googleId });
+  if (user) {
+    return { user, isNewUser: false };
+  }
+
+  // Link to an existing local account with the same email, if any
+  user = await User.findOne({ email });
+  if (user) {
+    user.googleId = googleId;
+    if (!user.profilePicture) user.profilePicture = picture;
+    if (user.authProvider === "local" && !user.password) {
+      user.authProvider = "google";
+    }
+    if (email_verified) user.isVerified = user.isVerified || true;
+    await user.save();
+    return { user, isNewUser: false };
+  }
+
+  user = await User.create({
+    googleId,
+    email,
+    name: name || "",
+    profilePicture: picture,
+    authProvider: "google",
+    isVerified: !!email_verified,
+  });
+  return { user, isNewUser: true };
+};
 
 const STEP_ORDER = [
   "welcome",
@@ -45,22 +105,40 @@ const buildNavigationResponse = (targetIndex, isComplete) => {
   return { canGoBack, canGoForward, previousStep, nextStep };
 };
 
-// Helper Process university data
+// Helper Process university data - FIXED to handle missing University model
 const processUniversityData = async (data, userId) => {
   const updateData = {};
 
   if (!data.universityId) {
+    if (data.selectedUniversity) {
+      updateData.selectedUniversity = data.selectedUniversity;
+    }
+    return updateData;
+  }
+
+  let University;
+  try {
+    University = mongoose.model("University");
+  } catch (e) {
+    if (data.universityId) {
+      updateData.universityId = data.universityId;
+    }
+    if (data.selectedUniversity) {
+      updateData.selectedUniversity = data.selectedUniversity;
+    }
     return updateData;
   }
 
   try {
-    const University = mongoose.model("University");
     const university = await University.findById(data.universityId);
     if (university) {
       updateData.universityId = data.universityId;
       updateData.selectedUniversity = university.name;
+    } else if (data.selectedUniversity) {
+      updateData.selectedUniversity = data.selectedUniversity;
     }
   } catch (error) {
+    // This is a recoverable error - we have fallback data
     logger.error(
       `Failed to resolve university ${data.universityId} for user ${userId}:`,
       error,
@@ -73,7 +151,7 @@ const processUniversityData = async (data, userId) => {
   return updateData;
 };
 
-// Helper: Process location data
+// Helper: Process location data - FIXED to properly save location
 const processLocationData = (user, data) => {
   if (data.location?.latitude && data.location?.longitude) {
     if (!user.preferences) user.preferences = {};
@@ -138,6 +216,8 @@ const buildUserResponse = (user) => {
     phoneNumber: user.phoneNumber,
     isVerified: user.isVerified,
     onboardingStep: user.onboardingStep,
+    authProvider: user.authProvider,
+    profilePicture: user.profilePicture,
   };
 
   if (user.selectedUniversity) {
@@ -154,7 +234,18 @@ const resolveStepNavigation = (user, step) => {
   const currentIndex = STEP_ORDER.indexOf(user.onboardingStep);
   const targetIndex = STEP_ORDER.indexOf(step);
 
-  if (!canNavigateForward(currentIndex, targetIndex)) {
+  // Allow jumping to complete from any step (will be validated by checkCompletionPrerequisites)
+  if (step === "complete") {
+    return { ok: true, currentIndex, targetIndex };
+  }
+
+  // Allow going backward freely
+  if (targetIndex < currentIndex) {
+    return { ok: true, currentIndex, targetIndex };
+  }
+
+  // Only allow forward movement one step at a time
+  if (targetIndex > currentIndex + 1) {
     const nextStep = STEP_ORDER[currentIndex + 1] || "complete";
     return {
       ok: false,
@@ -207,18 +298,34 @@ const checkCompletionPrerequisites = async (
   return { ok: true };
 };
 
+// Helper: Build step update data
 const buildStepUpdateData = async (step, data, user, userId) => {
-  const updateData = { onboardingStep: step };
+  const updateData = {};
 
-  if (step === "university" && data.universityId) {
-    Object.assign(updateData, await processUniversityData(data, userId));
+  // Always update the onboarding step
+  updateData.onboardingStep = step;
+
+  if (step === "university") {
+    const universityData = await processUniversityData(data, userId);
+    Object.assign(updateData, universityData);
   }
 
-  if (step === "location") {
-    const locationUpdated = processLocationData(user, data);
-    if (locationUpdated) {
-      await user.save();
-    }
+  if (
+    step === "location" &&
+    data.location?.latitude &&
+    data.location?.longitude
+  ) {
+    const currentPreferences = user.preferences || {};
+
+    // Update the entire preferences object with the new location data
+    updateData.preferences = {
+      ...currentPreferences,
+      onboardingLocation: {
+        latitude: data.location.latitude,
+        longitude: data.location.longitude,
+        updatedAt: new Date(),
+      },
+    };
   }
 
   return updateData;
@@ -238,6 +345,137 @@ const getContactSummary = async (userId, targetIndex, contactsIndex) => {
   return { count, maxContacts: config.maxTrustedContacts };
 };
 
+// ---------- CSRF Token Endpoint ----------
+router.get("/csrf-token", (req, res) => {
+  const token = generateCsrfToken(res);
+  res.json({ csrfToken: token });
+});
+
+// Helper: Validate signup input (email/password presence and password strength)
+const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/;
+
+const validateSignupInput = (email, password) => {
+  if (!email) {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        message: "Email is required for OTP verification.",
+      },
+    };
+  }
+
+  if (!password) {
+    return {
+      status: 400,
+      body: { success: false, message: "Password is required." },
+    };
+  }
+
+  if (!PASSWORD_PATTERN.test(password)) {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        message:
+          "Password must be at least 8 characters long and contain at least one letter and one number.",
+      },
+    };
+  }
+
+  return null;
+};
+
+/**
+ * Helper: Resolve whether this signup conflicts with an existing account, or if it can resume an incomplete signup.
+ * Returns either a conflict response or the existing user (if any).
+ */
+const resolveSignupAccount = async (email, phoneNumber) => {
+  const existingByEmail = await User.findOne({ email });
+  const existingByPhone = await User.findOne({ phoneNumber });
+
+  /**
+   * Only treat this as "resuming" an incomplete signup if the email and
+   * phone number both belong to the SAME existing account. Otherwise, one
+   * of them belongs to a different account and is a genuine conflict.
+   */
+  const isSameAccount =
+    existingByEmail &&
+    existingByPhone &&
+    existingByEmail._id.equals(existingByPhone._id);
+
+  if (!isSameAccount) {
+    if (existingByEmail) {
+      return {
+        conflict: {
+          status: 400,
+          body: {
+            success: false,
+            message: "Email already registered. Please use a different email.",
+          },
+        },
+      };
+    }
+    if (existingByPhone) {
+      return {
+        conflict: {
+          status: 400,
+          body: {
+            success: false,
+            message: "Phone number already registered. Please log in.",
+          },
+        },
+      };
+    }
+    return { user: null };
+  }
+
+  if (existingByEmail.isVerified) {
+    return {
+      conflict: {
+        status: 400,
+        body: {
+          success: false,
+          message: "Account already exists. Please log in.",
+        },
+      },
+    };
+  }
+
+  return { user: existingByEmail };
+};
+
+/**
+ * Helper: Create a new user, or update an existing unverified one to resume
+ * an incomplete signup.
+ */
+const upsertSignupUser = async (
+  existingUser,
+  { email, phoneNumber, name, password },
+) => {
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
+
+  if (existingUser) {
+    existingUser.name = name || existingUser.name;
+    existingUser.email = email || existingUser.email;
+    existingUser.phoneNumber = phoneNumber || existingUser.phoneNumber;
+    existingUser.password = hashedPassword;
+    existingUser.lastPasswordChange = new Date();
+    await existingUser.save();
+    return { user: existingUser, isNewUser: false };
+  }
+
+  const user = await User.create({
+    email,
+    phoneNumber,
+    name: name || "",
+    password: hashedPassword,
+    isVerified: false,
+  });
+  return { user, isNewUser: true };
+};
+
 /**
  * @swagger
  * /api/auth/signup:
@@ -254,17 +492,6 @@ const getContactSummary = async (userId, targetIndex, contactsIndex) => {
  *     responses:
  *       200:
  *         description: OTP sent successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: OTP sent successfully to your email
  *       400:
  *         description: Validation error or user already exists
  *       429:
@@ -278,71 +505,24 @@ router.post(
     try {
       const { email, phoneNumber, name, password } = req.body;
 
-      // Validate email is provided
-      if (!email) {
-        return res.status(400).json({
-          success: false,
-          message: "Email is required for OTP verification.",
-        });
+      const inputError = validateSignupInput(email, password);
+      if (inputError) {
+        return res.status(inputError.status).json(inputError.body);
       }
 
-      if (!password) {
-        return res.status(400).json({
-          success: false,
-          message: "Password is required.",
-        });
+      const accountResult = await resolveSignupAccount(email, phoneNumber);
+      if (accountResult.conflict) {
+        return res
+          .status(accountResult.conflict.status)
+          .json(accountResult.conflict.body);
       }
 
-      const passwordPattern = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/;
-      if (!passwordPattern.test(password)) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Password must be at least 8 characters long and contain at least one letter and one number.",
-        });
-      }
-
-      // Check if this email is already tied to a DIFFERENT phone number.
-      const existingEmail = await User.findOne({ email });
-      if (existingEmail && existingEmail.phoneNumber !== phoneNumber) {
-        return res.status(400).json({
-          success: false,
-          message: "Email already registered. Please use a different email.",
-        });
-      }
-
-      // Check if this phone number is already tied to a DIFFERENT email
-      const existingPhone = await User.findOne({ phoneNumber });
-      if (existingPhone && existingPhone.email !== email) {
-        return res.status(400).json({
-          success: false,
-          message: "Phone number already registered. Please log in.",
-        });
-      }
-
-      // Find or create user
-      let user = existingPhone || existingEmail;
-      const isNewUser = !user;
-
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(password, salt);
-
-      if (user && !user.isVerified) {
-        user.name = name || user.name;
-        user.email = email || user.email;
-        user.phoneNumber = phoneNumber || user.phoneNumber;
-        user.password = hashedPassword;
-        user.lastPasswordChange = new Date();
-        await user.save();
-      } else if (!user) {
-        await User.create({
-          email,
-          phoneNumber,
-          name: name || "",
-          password: hashedPassword,
-          isVerified: false,
-        });
-      }
+      const { user, isNewUser } = await upsertSignupUser(accountResult.user, {
+        email,
+        phoneNumber,
+        name,
+        password,
+      });
 
       // Send OTP via email
       const result = await emailService.sendOTP(email, phoneNumber, "signup");
@@ -374,7 +554,7 @@ router.post(
  * /api/auth/login:
  *   post:
  *     summary: Login with email and password
- *     description: Authenticates a user with email and password, returns a JWT token
+ *     description: Authenticates a user with email and password, sets HTTP-only cookies
  *     tags: [Authentication]
  *     requestBody:
  *       required: true
@@ -394,6 +574,9 @@ router.post(
  *     responses:
  *       200:
  *         description: Login successful
+ *         headers:
+ *           Set-Cookie:
+ *             description: accessToken and refreshToken HTTP-only cookies
  *       400:
  *         description: No password set on this account
  *       401:
@@ -405,6 +588,7 @@ router.post(
  */
 router.post(
   "/login",
+  verifyCsrfToken,
   authLimiter,
   validate(authValidation.login),
   asyncHandler(async (req, res, next) => {
@@ -431,7 +615,7 @@ router.post(
         return res.status(400).json({
           success: false,
           message:
-            "No password set for this account yet. Log in with OTP and set a password from your profile, or use forgot-password.",
+            "No password set for this account yet. Please use forgot-password.",
         });
       }
 
@@ -443,24 +627,236 @@ router.post(
         });
       }
 
-      const token = jwt.sign(
-        { userId: user._id, email: user.email },
-        config.jwtSecret,
-        { expiresIn: config.jwtExpiresIn || "7d" },
-      );
+      // Generate tokens
+      const accessToken = generateAccessToken(user._id, user.email);
+      const refreshToken = generateRefreshToken(user._id, user.email);
+
+      // Set cookies
+      setAccessTokenCookie(res, accessToken);
+      setRefreshTokenCookie(res, refreshToken);
+
+      // Generate CSRF token
+      const csrfToken = generateCsrfToken(res);
 
       user.lastLogin = new Date();
       await user.save();
 
+      logger.info("Login successful", {
+        userId: user._id,
+        email: user.email,
+        ip: req.ip,
+      });
+
       res.status(200).json({
         success: true,
         message: "Login successful",
-        token,
+        token: accessToken,
+        refreshToken,
+        csrfToken,
         user: {
           id: user._id,
           phoneNumber: user.phoneNumber,
           name: user.name,
           email: user.email,
+          isVerified: user.isVerified,
+          onboardingStep: user.onboardingStep,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }),
+);
+
+/**
+ * @swagger
+ * /api/auth/google:
+ *   post:
+ *     summary: Sign in or sign up with Google
+ *     description: Verifies a Google ID token (obtained client-side via Google Sign-In) and issues HTTP-only session cookies. Creates a new account on first sign-in, or links Google to an existing account with the same email.
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - idToken
+ *             properties:
+ *               idToken:
+ *                 type: string
+ *                 description: The ID token returned by Google Sign-In on the client
+ *     responses:
+ *       200:
+ *         description: Signed in successfully
+ *         headers:
+ *           Set-Cookie:
+ *             description: accessToken and refreshToken HTTP-only cookies
+ *       400:
+ *         description: Missing or invalid ID token
+ *       401:
+ *         description: Google token verification failed
+ *       403:
+ *         description: Account is deactivated
+ */
+router.post(
+  "/google",
+  verifyCsrfToken,
+  authLimiter,
+  validate([
+    body("idToken").notEmpty().withMessage("Google ID token is required"),
+  ]),
+  asyncHandler(async (req, res, next) => {
+    try {
+      const { idToken } = req.body;
+
+      let payload;
+      try {
+        payload = await verifyGoogleIdToken(idToken);
+      } catch (error) {
+        logger.error("Google ID token verification failed:", error);
+        return res.status(401).json({
+          success: false,
+          message: "Invalid or expired Google token.",
+        });
+      }
+
+      if (!payload?.email) {
+        return res.status(401).json({
+          success: false,
+          message: "Google account did not return an email address.",
+        });
+      }
+
+      const { user, isNewUser } = await resolveGoogleUser(payload);
+
+      if (!user.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: "Account is deactivated. Please contact support.",
+        });
+      }
+
+      if (isNewUser) {
+        Promise.resolve(emailService.sendWelcomeEmail(user)).catch((err) => {
+          logger.error("Welcome email sending failed:", err);
+        });
+      }
+
+      // Generate tokens (same session mechanism as password login)
+      const accessToken = generateAccessToken(user._id, user.email);
+      const refreshToken = generateRefreshToken(user._id, user.email);
+
+      setAccessTokenCookie(res, accessToken);
+      setRefreshTokenCookie(res, refreshToken);
+
+      const csrfToken = generateCsrfToken(res);
+
+      user.lastLogin = new Date();
+      await user.save();
+
+      logger.info("Google sign-in successful", {
+        userId: user._id,
+        email: user.email,
+        isNewUser,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: isNewUser ? "Account created with Google" : "Login successful",
+        isNewUser,
+        token: accessToken,
+        refreshToken,
+        csrfToken,
+        user: buildUserResponse(user),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }),
+);
+
+/**
+ * @swagger
+ * /api/auth/refresh-token:
+ *   post:
+ *     summary: Refresh access token
+ *     description: Uses refresh token cookie to generate new access and refresh tokens
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: Tokens refreshed successfully
+ *         headers:
+ *           Set-Cookie:
+ *             description: New accessToken and refreshToken HTTP-only cookies
+ *       401:
+ *         description: Invalid or missing refresh token
+ */
+router.post(
+  "/refresh-token",
+  verifyCsrfToken,
+  asyncHandler(async (req, res, next) => {
+    try {
+      const refreshToken = getRefreshTokenFromCookie(req);
+
+      if (!refreshToken) {
+        return res.status(401).json({
+          success: false,
+          message: "Refresh token required. Please log in.",
+        });
+      }
+
+      const decoded = verifyRefreshToken(refreshToken);
+
+      if (!decoded) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid or expired refresh token. Please log in again.",
+        });
+      }
+
+      // Find user
+      const user = await User.findById(decoded.userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found.",
+        });
+      }
+
+      if (!user.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: "Account is deactivated.",
+        });
+      }
+
+      // Generate new tokens
+      const newAccessToken = generateAccessToken(user._id, user.email);
+      const newRefreshToken = generateRefreshToken(user._id, user.email);
+
+      // Set new cookies
+      setAccessTokenCookie(res, newAccessToken);
+      setRefreshTokenCookie(res, newRefreshToken);
+
+      // Generate new CSRF token
+      const csrfToken = generateCsrfToken(res);
+
+      logger.info("Tokens refreshed", {
+        userId: user._id,
+        email: user.email,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Tokens refreshed successfully",
+        csrfToken,
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          phoneNumber: user.phoneNumber,
           isVerified: user.isVerified,
         },
       });
@@ -475,7 +871,7 @@ router.post(
  * /api/auth/verify-otp:
  *   post:
  *     summary: Verify OTP and complete signup/login
- *     description: Verifies the OTP sent to email and returns a JWT token
+ *     description: Verifies the OTP sent to email and sets auth cookies
  *     tags: [Authentication]
  *     requestBody:
  *       required: true
@@ -490,17 +886,15 @@ router.post(
  *               email:
  *                 type: string
  *                 format: email
- *                 example: student@campus.edu
  *               otpCode:
  *                 type: string
  *                 example: 123456
  *     responses:
  *       200:
  *         description: OTP verified successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
+ *         headers:
+ *           Set-Cookie:
+ *             description: accessToken and refreshToken HTTP-only cookies
  *       400:
  *         description: Invalid or expired OTP
  *       404:
@@ -508,6 +902,7 @@ router.post(
  */
 router.post(
   "/verify-otp",
+  verifyCsrfToken,
   authLimiter,
   validate(authValidation.verifyOTP),
   asyncHandler(async (req, res, next) => {
@@ -517,12 +912,22 @@ router.post(
       // Verify OTP using email
       const result = await emailService.verifyOTP(email, otpCode);
 
-      // Generate JWT token
-      const token = jwt.sign(
-        { userId: result.user._id, email: result.user.email },
-        config.jwtSecret,
-        { expiresIn: config.jwtExpiresIn || "7d" },
+      // Generate tokens
+      const accessToken = generateAccessToken(
+        result.user._id,
+        result.user.email,
       );
+      const refreshToken = generateRefreshToken(
+        result.user._id,
+        result.user.email,
+      );
+
+      // Set cookies
+      setAccessTokenCookie(res, accessToken);
+      setRefreshTokenCookie(res, refreshToken);
+
+      // Generate CSRF token
+      const csrfToken = generateCsrfToken(res);
 
       // Update last login
       result.user.lastLogin = new Date();
@@ -531,13 +936,16 @@ router.post(
       res.status(200).json({
         success: true,
         message: "OTP verified successfully",
-        token,
+        token: accessToken,
+        refreshToken,
+        csrfToken,
         user: {
           id: result.user._id,
           phoneNumber: result.user.phoneNumber,
           name: result.user.name,
           email: result.user.email,
           isVerified: result.user.isVerified,
+          onboardingStep: result.user.onboardingStep,
         },
       });
     } catch (error) {
@@ -578,19 +986,9 @@ router.post(
  *               email:
  *                 type: string
  *                 format: email
- *                 example: student@campus.edu
  *     responses:
  *       200:
  *         description: OTP resent successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
  *       404:
  *         description: Email not found
  *       429:
@@ -598,6 +996,7 @@ router.post(
  */
 router.post(
   "/resend-otp",
+  verifyCsrfToken,
   otpLimiter,
   validate(authValidation.resendOTP),
   asyncHandler(async (req, res, next) => {
@@ -611,6 +1010,9 @@ router.post(
           message: "Email not found. Please sign up first.",
         });
       }
+
+      // Invalidate old OTPs
+      await OTP.updateMany({ email, isUsed: false }, { isUsed: true });
 
       const result = await emailService.resendOTP(email, user.phoneNumber);
 
@@ -635,7 +1037,7 @@ router.post(
  * /api/auth/logout:
  *   post:
  *     summary: Logout user
- *     description: Logs out the user (client-side token removal)
+ *     description: Clears authentication cookies and logs out the user
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
@@ -645,8 +1047,17 @@ router.post(
  */
 router.post(
   "/logout",
+  verifyCsrfToken,
   authenticate,
   asyncHandler(async (req, res) => {
+    // Clear all auth cookies
+    clearTokenCookies(res);
+
+    logger.info("User logged out", {
+      userId: req.userId,
+      email: req.user?.email,
+    });
+
     res.status(200).json({
       success: true,
       message: "Logged out successfully",
@@ -676,6 +1087,20 @@ router.post(
  *                 type: string
  *                 enum: [welcome, location, university, contacts, complete]
  *                 example: university
+ *               data:
+ *                 type: object
+ *                 properties:
+ *                   universityId:
+ *                     type: string
+ *                   selectedUniversity:
+ *                     type: string
+ *                   location:
+ *                     type: object
+ *                     properties:
+ *                       latitude:
+ *                         type: number
+ *                       longitude:
+ *                         type: number
  *     responses:
  *       200:
  *         description: Onboarding step updated successfully
@@ -686,6 +1111,7 @@ router.post(
  */
 router.patch(
   "/onboarding-step",
+  verifyCsrfToken,
   authenticate,
   validate([
     body("step")
@@ -702,6 +1128,14 @@ router.patch(
     try {
       const { step, data = {} } = req.body;
       const userId = req.userId;
+
+      // Check if user was not found by auth middleware
+      if (req._userNotFound) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
 
       const user = await User.findById(userId);
       if (!user) {
@@ -738,10 +1172,12 @@ router.patch(
 
       const updateData = await buildStepUpdateData(step, data, user, userId);
 
-      const updatedUser = await User.findByIdAndUpdate(userId, updateData, {
-        new: true,
-        runValidators: true,
-      }).select("-__v");
+      // Use $set for all updates - this handles dot notation properly
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $set: updateData },
+        { new: true, runValidators: true },
+      ).select("-__v");
 
       const isComplete = step === "complete";
       if (isComplete) {
@@ -784,6 +1220,120 @@ router.patch(
     }
   }),
 );
+/**
+ * @swagger
+ * /api/auth/onboarding-status:
+ *   get:
+ *     summary: Get onboarding status
+ *     description: Returns the current onboarding status and available steps
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Onboarding status retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ */
+router.get(
+  "/onboarding-status",
+  authenticate,
+  asyncHandler(async (req, res, next) => {
+    try {
+      const userId = req.userId;
+
+      // Check if user was not found by auth middleware
+      if (req._userNotFound) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      const currentIndex = STEP_ORDER.indexOf(user.onboardingStep);
+      const isComplete = user.onboardingStep === "complete";
+
+      const stepLabels = {
+        welcome: "Welcome & Profile",
+        location: "Location Settings",
+        university: "University Selection",
+        contacts: "Add Contacts",
+        complete: "Complete",
+      };
+
+      // FIXED: When isComplete is true, ALL steps should be marked as completed
+      const steps = STEP_ORDER.map((step, index) => {
+        // If onboarding is complete, all steps are completed
+        if (isComplete) {
+          return {
+            step,
+            label: stepLabels[step] || step,
+            isCompleted: true,
+            isActive: false,
+            isLocked: false,
+          };
+        }
+
+        let status = "upcoming";
+        if (index < currentIndex) status = "completed";
+        if (index === currentIndex) status = "active";
+
+        return {
+          step,
+          label: stepLabels[step] || step,
+          isCompleted: status === "completed",
+          isActive: status === "active",
+          isLocked: status === "upcoming" && !isComplete,
+        };
+      });
+
+      const contactCount = await TrustedContact.countDocuments({
+        userId: userId,
+        isActive: true,
+      });
+
+      const progress = isComplete
+        ? 100
+        : Math.round(((currentIndex + 1) / STEP_ORDER.length) * 100);
+      const canGoForward = !isComplete && currentIndex < STEP_ORDER.length - 1;
+      const canGoBack = currentIndex > 0;
+
+      res.status(200).json({
+        success: true,
+        currentStep: user.onboardingStep,
+        progress,
+        isComplete,
+        steps,
+        canGoForward,
+        canGoBack,
+        nextStep: canGoForward ? STEP_ORDER[currentIndex + 1] : null,
+        previousStep: canGoBack ? STEP_ORDER[currentIndex - 1] : null,
+        contactsCount: contactCount,
+        maxContacts: config.maxTrustedContacts,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+          isVerified: user.isVerified,
+          ...(user.selectedUniversity && {
+            selectedUniversity: user.selectedUniversity,
+          }),
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }),
+);
 
 /**
  * @swagger
@@ -797,15 +1347,6 @@ router.patch(
  *     responses:
  *       200:
  *         description: User profile retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 user:
- *                   $ref: '#/components/schemas/User'
  *       401:
  *         description: Unauthorized
  */
@@ -854,21 +1395,9 @@ router.get(
  *               email:
  *                 type: string
  *                 format: email
- *                 example: student@campus.edu
  *     responses:
  *       200:
  *         description: Password reset OTP sent
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 development_otp:
- *                   type: string
  *       404:
  *         description: Email not found
  *       429:
@@ -876,6 +1405,7 @@ router.get(
  */
 router.post(
   "/forgot-password",
+  verifyCsrfToken,
   otpLimiter,
   validate([
     body("email")
@@ -889,7 +1419,6 @@ router.post(
     try {
       const { email } = req.body;
 
-      // Check if user exists
       const user = await User.findOne({ email });
       if (!user) {
         return res.status(404).json({
@@ -898,7 +1427,6 @@ router.post(
         });
       }
 
-      // Check if user is active
       if (!user.isActive) {
         return res.status(403).json({
           success: false,
@@ -906,7 +1434,6 @@ router.post(
         });
       }
 
-      // Check if user can reset password
       if (!user.canResetPassword()) {
         return res.status(429).json({
           success: false,
@@ -914,7 +1441,7 @@ router.post(
         });
       }
 
-      // Invalidate any existing reset OTPs for this user
+      // Invalidate any existing reset OTPs
       await OTP.updateMany(
         {
           email: user.email,
@@ -924,7 +1451,6 @@ router.post(
         { isUsed: true },
       );
 
-      // Send password reset OTP
       const result = await emailService.sendPasswordResetOTP(
         user.email,
         user.phoneNumber,
@@ -968,26 +1494,12 @@ router.post(
  *               email:
  *                 type: string
  *                 format: email
- *                 example: student@campus.edu
  *               otpCode:
  *                 type: string
  *                 example: 123456
  *     responses:
  *       200:
  *         description: OTP verified successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 resetToken:
- *                   type: string
- *                 resetId:
- *                   type: string
  *       400:
  *         description: Invalid or expired OTP
  *       404:
@@ -997,6 +1509,7 @@ router.post(
  */
 router.post(
   "/verify-reset-otp",
+  verifyCsrfToken,
   authLimiter,
   validate([
     body("email")
@@ -1016,7 +1529,6 @@ router.post(
     try {
       const { email, otpCode } = req.body;
 
-      // Verify OTP
       const result = await emailService.verifyPasswordResetOTP(email, otpCode);
 
       const resetToken = jwt.sign(
@@ -1026,6 +1538,7 @@ router.post(
           purpose: "password_reset",
         },
         config.jwtSecret,
+        { expiresIn: "30m" },
       );
 
       res.status(200).json({
@@ -1040,7 +1553,6 @@ router.post(
         },
       });
     } catch (error) {
-      // Handle known errors gracefully
       if (error.message === "Invalid or expired OTP") {
         return res.status(400).json({
           success: false,
@@ -1080,29 +1592,18 @@ router.post(
  *             required:
  *               - resetToken
  *               - newPassword
+ *               - confirmPassword
  *             properties:
  *               resetToken:
  *                 type: string
- *                 description: Reset token from verify-reset-otp
  *               newPassword:
  *                 type: string
  *                 minLength: 8
- *                 description: New password (min 8 characters)
  *               confirmPassword:
  *                 type: string
- *                 description: Must match newPassword
  *     responses:
  *       200:
  *         description: Password reset successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
  *       400:
  *         description: Invalid reset token or passwords don't match
  *       401:
@@ -1110,6 +1611,7 @@ router.post(
  */
 router.post(
   "/reset-password",
+  verifyCsrfToken,
   validate([
     body("resetToken").notEmpty().withMessage("Reset token is required"),
     body("newPassword")
@@ -1129,7 +1631,6 @@ router.post(
     try {
       const { resetToken, newPassword } = req.body;
 
-      // Verify reset token
       let decoded;
       try {
         decoded = jwt.verify(resetToken, config.jwtSecret);
@@ -1146,7 +1647,6 @@ router.post(
         });
       }
 
-      // Check if token is for password reset
       if (decoded.purpose !== "password_reset") {
         return res.status(401).json({
           success: false,
@@ -1154,7 +1654,6 @@ router.post(
         });
       }
 
-      // Find user
       const user = await User.findById(decoded.userId);
       if (!user) {
         return res.status(404).json({
@@ -1163,7 +1662,6 @@ router.post(
         });
       }
 
-      // Check if user is active
       if (!user.isActive) {
         return res.status(403).json({
           success: false,
@@ -1171,7 +1669,6 @@ router.post(
         });
       }
 
-      // Check if user can reset password
       if (!user.canResetPassword()) {
         return res.status(429).json({
           success: false,
@@ -1179,17 +1676,14 @@ router.post(
         });
       }
 
-      // Hash new password
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-      // Update user password
       user.password = hashedPassword;
       user.lastPasswordChange = new Date();
       user.passwordResetAt = new Date();
       await user.save();
 
-      // Invalidate all reset OTPs for this user
       await OTP.updateMany(
         {
           email: user.email,
@@ -1199,8 +1693,7 @@ router.post(
         { isUsed: true },
       );
 
-      // Log the password reset
-      console.log(`Password reset for user: ${user.email}`);
+      logger.info(`Password reset for user: ${user.email}`);
 
       res.status(200).json({
         success: true,
@@ -1235,14 +1728,11 @@ router.post(
  *             properties:
  *               currentPassword:
  *                 type: string
- *                 description: User's current password
  *               newPassword:
  *                 type: string
  *                 minLength: 8
- *                 description: New password (min 8 characters)
  *               confirmPassword:
  *                 type: string
- *                 description: Must match newPassword
  *     responses:
  *       200:
  *         description: Password changed successfully
@@ -1253,6 +1743,7 @@ router.post(
  */
 router.post(
   "/change-password",
+  verifyCsrfToken,
   authenticate,
   validate([
     body("currentPassword")
@@ -1275,7 +1766,6 @@ router.post(
     try {
       const { currentPassword, newPassword } = req.body;
 
-      // Get user with password field
       const user = await User.findById(req.userId).select("+password");
 
       if (!user) {
@@ -1285,7 +1775,6 @@ router.post(
         });
       }
 
-      // Check if user has a password set
       if (!user.password) {
         return res.status(400).json({
           success: false,
@@ -1294,7 +1783,6 @@ router.post(
         });
       }
 
-      // Verify current password
       const isMatch = await bcrypt.compare(currentPassword, user.password);
       if (!isMatch) {
         return res.status(400).json({
@@ -1303,7 +1791,6 @@ router.post(
         });
       }
 
-      // Check if user can change password
       if (!user.canResetPassword()) {
         return res.status(429).json({
           success: false,
@@ -1311,20 +1798,21 @@ router.post(
         });
       }
 
-      // Hash new password
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-      // Update user password
       user.password = hashedPassword;
       user.lastPasswordChange = new Date();
       await user.save();
 
-      console.log(`Password changed for user: ${user.email}`);
+      // Clear all auth cookies - force re-login
+      clearTokenCookies(res);
+
+      logger.info(`Password changed for user: ${user.email}`);
 
       res.status(200).json({
         success: true,
-        message: "Password changed successfully.",
+        message: "Password changed successfully. Please login again.",
       });
     } catch (error) {
       next(error);

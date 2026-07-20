@@ -15,8 +15,10 @@ import sosRoutes from "./src/routes/sos.js";
 import { errorHandler } from "./src/middlewares/errorHandler.js";
 import { globalLimiter } from "./src/middlewares/rateLimiter.js";
 import { logger } from "./src/utils/logger.js";
+import cookieParser from "cookie-parser";
 
 const app = express();
+app.use(cookieParser());
 
 // Connect to MongoDB function
 const connectDB = async () => {
@@ -24,6 +26,7 @@ const connectDB = async () => {
     await mongoose.connect(process.env.MONGODB_URI);
     logger.info("MongoDB connected successfully");
     console.log("✅ MongoDB connected successfully");
+    console.log("🔎 DB:", mongoose.connection.name, "| host:", mongoose.connection.host);
     return true;
   } catch (err) {
     logger.error("MongoDB connection error:", err);

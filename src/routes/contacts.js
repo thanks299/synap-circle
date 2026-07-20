@@ -8,6 +8,7 @@ import { contactLimiter } from "../middlewares/rateLimiter.js";
 import { logger } from "../utils/logger.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import config from "../utils/config.js";
+import { verifyCsrfToken } from "../utils/tokenService.js";
 
 const router = express.Router();
 
@@ -106,7 +107,7 @@ const syncPrimaryContactAfterDelete = async (userId, contactId) => {
  *       401:
  *         description: Unauthorized
  */
-router.get("/", authenticate, async (req, res, next) => {
+router.get("/", authenticate, verifyCsrfToken, async (req, res, next) => {
   try {
     const contacts = await TrustedContact.find({
       userId: req.userId,
@@ -166,6 +167,7 @@ router.get("/", authenticate, async (req, res, next) => {
 router.post(
   "/",
   authenticate,
+  verifyCsrfToken,
   contactLimiter,
   validate(contactValidation.create),
   async (req, res, next) => {
@@ -277,6 +279,7 @@ router.post(
 router.put(
   "/:contactId",
   authenticate,
+  verifyCsrfToken,
   validate(contactValidation.update),
   asyncHandler(async (req, res) => {
     const { contactId } = req.params;

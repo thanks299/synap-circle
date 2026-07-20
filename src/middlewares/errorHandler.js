@@ -15,6 +15,15 @@ const errorHandler = (err, req, res, next) => {
     userId: req.userId,
   });
 
+  // Malformed JSON body (e.g. unescaped control characters, bad syntax)
+  if (err.type === "entity.parse.failed" || err instanceof SyntaxError) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "Invalid JSON in request body. Check for unescaped control characters (e.g. raw newlines/tabs) in string fields.",
+    });
+  }
+
   // Mongoose validation error
   if (err.name === "ValidationError") {
     const errors = Object.values(err.errors).map((e) => e.message);

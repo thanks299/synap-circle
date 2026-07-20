@@ -255,8 +255,15 @@ describe("Authentication API Tests", () => {
     let authToken;
     let userId;
 
+    const protectedRoutesUser = {
+      email: "protected-routes@campus.edu",
+      phoneNumber: "+1234567899",
+      name: "Protected Routes User",
+      password: "TestPassword123",
+    };
+
     beforeAll(async () => {
-      const result = await getAuthToken(testUser);
+      const result = await getAuthToken(protectedRoutesUser);
       authToken = result.token;
       userId = result.userId;
     });
@@ -272,9 +279,12 @@ describe("Authentication API Tests", () => {
         expect(response.body).toHaveProperty("user");
         expect(response.body.user).toHaveProperty(
           "phoneNumber",
-          testUser.phoneNumber,
+          protectedRoutesUser.phoneNumber,
         );
-        expect(response.body.user).toHaveProperty("email", testUser.email);
+        expect(response.body.user).toHaveProperty(
+          "email",
+          protectedRoutesUser.email,
+        );
         expect(response.body.user).toHaveProperty("trustedContactsCount", 0);
         expect(response.body.user).toHaveProperty("maxContacts", 3);
       });

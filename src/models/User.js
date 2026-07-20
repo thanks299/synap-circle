@@ -5,8 +5,8 @@ const userSchema = new mongoose.Schema(
   {
     phoneNumber: {
       type: String,
-      required: [true, "Phone number is required"],
       unique: true,
+      sparse: true,
       trim: true,
       match: [PHONE_REGEX, "Please enter a valid phone number"],
     },
@@ -21,6 +21,21 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       select: false,
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+    },
+    profilePicture: {
+      type: String,
+      trim: true,
     },
     name: {
       type: String,
@@ -64,6 +79,14 @@ const userSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      onboardingLocation: {
+        type: {
+          latitude: Number,
+          longitude: Number,
+          updatedAt: Date,
+        },
+        default: null,
+      },
     },
     passwordResetAt: {
       type: Date,
@@ -71,6 +94,30 @@ const userSchema = new mongoose.Schema(
     lastPasswordChange: {
       type: Date,
     },
+    refreshTokens: [
+      {
+        token: {
+          type: String,
+          required: true,
+        },
+        expiresAt: {
+          type: Date,
+          required: true,
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+        deviceInfo: {
+          type: String,
+          default: "Unknown device",
+        },
+        isRevoked: {
+          type: Boolean,
+          default: false,
+        },
+      },
+    ],
   },
   {
     timestamps: true,
@@ -103,6 +150,20 @@ userSchema.methods.getSecurityContacts = async function () {
   }
 
   return await university.getAllSecurityContacts();
+};
+
+// Added method to clean expired refresh tokens
+userSchema.methods.cleanExpiredRefreshTokens = function () {
+  this.refreshTokens = this.refreshTokens.filter(
+    (rt) => rt.expiresAt > new Date() && !rt.isRevoked,
+  );
+  return this;
+};
+
+// Added method to revoke all refresh tokens for a user
+userSchema.methods.revokeAllRefreshTokens = function () {
+  this.refreshTokens = [];
+  return this;
 };
 
 userSchema.methods.canResetPassword = function () {

@@ -1,15 +1,6 @@
 /**
  * Central place to read and validate environment configuration.
  *
- * Previously process.env.JWT_SECRET, MAX_TRUSTED_CONTACTS,
- * CANCELLATION_WINDOW_MINUTES, etc. were read inline across many files
- * with no validation, so a missing JWT_SECRET only surfaced as a
- * confusing error deep inside jsonwebtoken the first time someone logged
- * in. This fails fast at startup instead, and gives every other module a
- * single, typed source for config values.
- *
- * NOTE: This must not import ./logger.js — logger.js reads config values
- * from here, so importing it back would create a circular dependency.
  */
 
 const required = ["JWT_SECRET"];
@@ -31,7 +22,9 @@ const config = {
   isDevelopment: nodeEnv !== "production",
 
   jwtSecret: process.env.JWT_SECRET,
-  jwtExpiresIn: process.env.JWT_EXPIRE || "7d",
+  jwtExpiresIn: process.env.JWT_EXPIRE || "15m",
+  refreshSecret: process.env.REFRESH_SECRET,
+  refreshExpiresIn: process.env.REFRESH_EXPIRE || "4d",
 
   disableEmailSending: process.env.DISABLE_EMAIL_SENDING === "true",
   disableRateLimiting: process.env.DISABLE_RATE_LIMITING === "true",

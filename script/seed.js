@@ -1,4 +1,3 @@
-// scripts/seed.js
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import CampusSecurity from "../src/models/CampusSecurity.js";
@@ -10,6 +9,12 @@ const seedData = async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log("✅ Connected to MongoDB");
+    console.log(
+      "🔎 DB:",
+      mongoose.connection.name,
+      "| host:",
+      mongoose.connection.host,
+    );
 
     // Clear existing data
     await CampusSecurity.deleteMany({});
@@ -21,9 +26,12 @@ const seedData = async () => {
       {
         name: "Campus Security Main Desk",
         phoneNumber: "08134490997",
-        email: "thanksayo@gmail.com",
+        email: "olagokesikiru06@gmail.com",
         location: "Main Building, Ground Floor",
-        coordinates: { latitude: 37.7749, longitude: -122.4194 },
+        coordinates: {
+          type: "Point",
+          coordinates: [-122.4194, 37.7749],
+        },
         isPrimary: true,
         description: "24/7 Campus Security Main Desk",
         operatingHours: "24/7",
@@ -31,9 +39,12 @@ const seedData = async () => {
       {
         name: "Campus Security Night Patrol",
         phoneNumber: "07070749664",
-        email: "thanksagbebble@gmail.com",
+        email: "ephraimnyikwagh@gmail.com",
         location: "Security Booth, Gate A",
-        coordinates: { latitude: 37.775, longitude: -122.4195 },
+        coordinates: {
+          type: "Point",
+          coordinates: [-122.4195, 37.775], // [longitude, latitude]
+        },
         isPrimary: false,
         description: "Night Patrol Unit",
         operatingHours: "9:00 PM - 6:00 AM",
@@ -48,10 +59,27 @@ const seedData = async () => {
       {
         type: "security",
         name: "University Police Department",
-        phoneNumber: "",
-        email: "thanksayo@gmail.com",
+        phoneNumber: "08065706129",
+        email: "fayokebg@gmail.com",
         address: "University Police Station, Campus Road",
-        coordinates: { latitude: 37.7751, longitude: -122.4196 },
+        coordinates: {
+          type: "Point",
+          coordinates: [-122.4196, 37.7751], // [longitude, latitude]
+        },
+        isVerified: true,
+        description: "Campus Police Department",
+        operatingHours: "24/7",
+      },
+      {
+        type: "security",
+        name: "University Police Department",
+        phoneNumber: "08065706129",
+        email: "preciousjohn@gmail.com",
+        address: "University Police Station, Campus Road",
+        coordinates: {
+          type: "Point",
+          coordinates: [-122.4196, 37.7751], // [longitude, latitude]
+        },
         isVerified: true,
         description: "Campus Police Department",
         operatingHours: "24/7",
