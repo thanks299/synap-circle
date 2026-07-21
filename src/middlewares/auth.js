@@ -117,14 +117,6 @@ const authenticate = async (req, res, next) => {
 
     const result = await resolveUserFromToken(token);
 
-    // If user not found, we want the route handler to handle it (for 404 tests)
-    if (result.userNotFound) {
-      req._userNotFound = true;
-      req.userId = null;
-      req.user = null;
-      return next();
-    }
-
     if (!result.user) {
       return res.status(result.errorStatus).json(result.errorBody);
     }

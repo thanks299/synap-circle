@@ -15,7 +15,7 @@ const alertRecipientSchema = new mongoose.Schema(
     },
     recipientType: {
       type: String,
-      enum: ["trusted_contact", "campus_security"],
+      enum: ["trusted_contact", "campus_security", "emergency_directory"],
       required: true,
     },
     recipientId: {

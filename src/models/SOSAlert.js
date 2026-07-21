@@ -27,6 +27,11 @@ const sosAlertSchema = new mongoose.Schema(
       enum: ["sent", "cancelled", "failed", "resolved"],
       default: "sent",
     },
+    message: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+    },
     cancelledAt: {
       type: Date,
     },

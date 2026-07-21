@@ -1,6 +1,7 @@
 import SOSAlert from "../models/SOSAlert.js";
 import TrustedContact from "../models/TrustedContact.js";
 import CampusSecurity from "../models/CampusSecurity.js";
+import EmergencyDirectory from "../models/EmergencyDirectory.js";
 import AlertRecipient from "../models/AlertRecipient.js";
 import User from "../models/User.js";
 import emailService from "./emailService.js";
@@ -12,7 +13,17 @@ class SOSService {
    */
   async triggerSOS(userId, locationData) {
     try {
-      const { latitude, longitude, locationAvailable = true } = locationData;
+      if (!userId) {
+        const error = new Error("User authentication required");
+        error.statusCode = 401;
+        throw error;
+      }
+      const {
+        latitude,
+        longitude,
+        locationAvailable = true,
+        message,
+      } = locationData;
 
       // Get user details
       const user = await User.findById(userId);
@@ -42,6 +53,10 @@ class SOSService {
         throw error;
       }
 
+      if (message) {
+        alert.message = message;
+      }
+
       // Generate location link
       const locationLink =
         latitude && longitude
@@ -55,6 +70,7 @@ class SOSService {
         longitude: longitude || null,
         locationAvailable,
         locationLink,
+        message: message || null,
         status: "sent",
         recipients: [],
         contactsNotified: [],
@@ -87,6 +103,17 @@ class SOSService {
         });
       });
 
+      emergencyContacts.forEach((emergency) => {
+        recipients.push({
+          type: "emergency_directory",
+          recipientId: emergency._id,
+          email: emergency.email,
+          phoneNumber: emergency.phoneNumber,
+          name: emergency.name,
+          relationship: emergency.type,
+        });
+      });
+
       // Update alert with recipients
       alert.recipients = recipients;
       await alert.save();
@@ -102,6 +129,7 @@ class SOSService {
         alertId: alert._id.toString(),
         isCancelled: false,
         timestamp: new Date().toISOString(),
+        message: message || null,
         contacts: recipients.map((r) => ({
           email: r.email,
           name: r.name,

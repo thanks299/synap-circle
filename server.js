@@ -26,7 +26,12 @@ const connectDB = async () => {
     await mongoose.connect(process.env.MONGODB_URI);
     logger.info("MongoDB connected successfully");
     console.log("✅ MongoDB connected successfully");
-    console.log("🔎 DB:", mongoose.connection.name, "| host:", mongoose.connection.host);
+    console.log(
+      "🔎 DB:",
+      mongoose.connection.name,
+      "| host:",
+      mongoose.connection.host,
+    );
     return true;
   } catch (err) {
     logger.error("MongoDB connection error:", err);
@@ -69,7 +74,61 @@ app.use(
 // Global rate limiter
 app.use("/api", globalLimiter);
 
-// Health check endpoint
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: API health check
+ *     description: Returns the health status of the API server and database connection
+ *     tags: [Health]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2026-07-20T19:34:50.000Z"
+ *                 uptime:
+ *                   type: number
+ *                   example: 123.45
+ *                 environment:
+ *                   type: string
+ *                   enum: [development, production, test]
+ *                 mongodb:
+ *                   type: object
+ *                   properties:
+ *                     status:
+ *                       type: string
+ *                       example: connected
+ *                 services:
+ *                   type: object
+ *                   properties:
+ *                     email:
+ *                       type: string
+ *                       example: configured
+ *       503:
+ *         description: Service unavailable
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: error
+ *                 message:
+ *                   type: string
+ *                   example: Database connection failed
+ */
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "ok",

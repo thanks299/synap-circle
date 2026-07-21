@@ -372,12 +372,23 @@ class EmailService {
   /**
    * Generate email subject
    */
-  _generateSubject(userName, userPhone, isCancelled) {
+  _generateSubject(userName, userPhone, isCancelled, message) {
     const displayName = userName || userPhone;
+    const hasMessage = message && message.length > 0;
+    const getMessagePreview = (message) => {
+      if (!message || message.length === 0) return "";
+      const truncated =
+        message.length > 30 ? message.substring(0, 30) + "..." : message;
+      return ` - "${truncated}"`;
+    };
+
+    // Then use it:
+    const messagePreview = getMessagePreview(message);
+
     if (isCancelled) {
       return `🚨 SOS Alert from ${displayName} - CANCELLED`;
     }
-    return `🚨 SOS Alert from ${displayName}`;
+    return `🚨 SOS Alert from ${displayName}${messagePreview}`;
   }
 
   /**
@@ -529,6 +540,7 @@ class EmailService {
       alertId,
       isCancelled = false,
       timestamp,
+      message,
     } = alertData;
 
     const locationUrl = this._generateLocationUrl(
@@ -537,6 +549,18 @@ class EmailService {
       locationLink,
     );
     const mapsLink = this._generateMapsLink(latitude, longitude, locationUrl);
+
+    let messageHtml = "";
+    if (message) {
+      messageHtml = `
+      <div class="message-box" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+        <label style="font-weight: bold; color: #856404; display: block; margin-bottom: 4px; font-size: 14px;">💬 Message from User</label>
+        <div style="font-size: 16px; color: #333; padding: 8px; background: white; border-radius: 4px;">
+          "${message}"
+        </div>
+      </div>
+    `;
+    }
 
     return `
       <!DOCTYPE html>
@@ -565,6 +589,7 @@ class EmailService {
           <div class="content">
             ${this._generateStatusSection(isCancelled)}
             ${this._generateUserInfo(userName, userPhone, userEmail)}
+             ${messageHtml}
             <div class="info-box" style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #ff4444;">
               <label style="font-weight: bold; color: #555; display: block; margin-bottom: 4px; font-size: 14px;">🕐 Time</label>
               <div class="value" style="font-size: 16px; color: #222;">${timestamp || new Date().toLocaleString()}</div>

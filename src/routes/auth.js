@@ -105,7 +105,7 @@ const buildNavigationResponse = (targetIndex, isComplete) => {
   return { canGoBack, canGoForward, previousStep, nextStep };
 };
 
-// Helper Process university data - FIXED to handle missing University model
+// Helper Process university data
 const processUniversityData = async (data, userId) => {
   const updateData = {};
 
@@ -116,10 +116,12 @@ const processUniversityData = async (data, userId) => {
     return updateData;
   }
 
+  // Check if University model exists without try/catch
   let University;
-  try {
-    University = mongoose.model("University");
-  } catch (e) {
+  if (mongoose.models.University) {
+    University = mongoose.models.University;
+  } else {
+    // Model doesn't exist, just use the provided data
     if (data.universityId) {
       updateData.universityId = data.universityId;
     }
@@ -138,7 +140,7 @@ const processUniversityData = async (data, userId) => {
       updateData.selectedUniversity = data.selectedUniversity;
     }
   } catch (error) {
-    // This is a recoverable error - we have fallback data
+    // This is a database error - log it and use fallback
     logger.error(
       `Failed to resolve university ${data.universityId} for user ${userId}:`,
       error,
@@ -346,6 +348,28 @@ const getContactSummary = async (userId, targetIndex, contactsIndex) => {
 };
 
 // ---------- CSRF Token Endpoint ----------
+/**
+ * @swagger
+ * /api/auth/csrf-token:
+ *   get:
+ *     summary: Get a CSRF token
+ *     description: >
+ *       Issues a CSRF token, returned in the response body and also set as a
+ *       non-httpOnly `csrfToken` cookie.
+ *     tags: [Authentication]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: CSRF token issued
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 csrfToken:
+ *                   type: string
+ *                   example: 9f2b1e4a7c3d8f0a1b2c3d4e5f6a7b8c
+ */
 router.get("/csrf-token", (req, res) => {
   const token = generateCsrfToken(res);
   res.json({ csrfToken: token });
@@ -483,6 +507,7 @@ const upsertSignupUser = async (
  *     summary: Send OTP for signup
  *     description: Creates a user and sends a 6-digit OTP to their email
  *     tags: [Authentication]
+ *     security: []
  *     requestBody:
  *       required: true
  *       content:
@@ -556,6 +581,14 @@ router.post(
  *     summary: Login with email and password
  *     description: Authenticates a user with email and password, sets HTTP-only cookies
  *     tags: [Authentication]
+ *     security: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     requestBody:
  *       required: true
  *       content:
@@ -675,6 +708,14 @@ router.post(
  *     summary: Sign in or sign up with Google
  *     description: Verifies a Google ID token (obtained client-side via Google Sign-In) and issues HTTP-only session cookies. Creates a new account on first sign-in, or links Google to an existing account with the same email.
  *     tags: [Authentication]
+ *     security: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     requestBody:
  *       required: true
  *       content:
@@ -784,6 +825,14 @@ router.post(
  *     summary: Refresh access token
  *     description: Uses refresh token cookie to generate new access and refresh tokens
  *     tags: [Authentication]
+ *     security: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     responses:
  *       200:
  *         description: Tokens refreshed successfully
@@ -873,6 +922,14 @@ router.post(
  *     summary: Verify OTP and complete signup/login
  *     description: Verifies the OTP sent to email and sets auth cookies
  *     tags: [Authentication]
+ *     security: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     requestBody:
  *       required: true
  *       content:
@@ -974,6 +1031,14 @@ router.post(
  *     summary: Resend OTP
  *     description: Resends a new OTP to the user's registered email
  *     tags: [Authentication]
+ *     security: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     requestBody:
  *       required: true
  *       content:
@@ -1041,6 +1106,13 @@ router.post(
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     responses:
  *       200:
  *         description: Logged out successfully
@@ -1074,6 +1146,13 @@ router.post(
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     requestBody:
  *       required: true
  *       content:
@@ -1220,6 +1299,7 @@ router.patch(
     }
   }),
 );
+
 /**
  * @swagger
  * /api/auth/onboarding-status:
@@ -1269,7 +1349,7 @@ router.get(
         complete: "Complete",
       };
 
-      // FIXED: When isComplete is true, ALL steps should be marked as completed
+      // When isComplete is true, ALL steps should be marked as completed
       const steps = STEP_ORDER.map((step, index) => {
         // If onboarding is complete, all steps are completed
         if (isComplete) {
@@ -1383,6 +1463,14 @@ router.get(
  *     summary: Request password reset OTP
  *     description: Sends a password reset OTP to the user's email
  *     tags: [Authentication]
+ *     security: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     requestBody:
  *       required: true
  *       content:
@@ -1481,6 +1569,14 @@ router.post(
  *     summary: Verify password reset OTP
  *     description: Verifies the OTP for password reset and returns a reset token
  *     tags: [Authentication]
+ *     security: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     requestBody:
  *       required: true
  *       content:
@@ -1583,6 +1679,14 @@ router.post(
  *     summary: Reset password
  *     description: Resets the user's password using the reset token
  *     tags: [Authentication]
+ *     security: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     requestBody:
  *       required: true
  *       content:
@@ -1715,6 +1819,13 @@ router.post(
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: x-csrf-token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Token obtained from GET /api/auth/csrf-token
  *     requestBody:
  *       required: true
  *       content:

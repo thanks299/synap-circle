@@ -47,13 +47,14 @@ router.post(
   sosLimiter,
   validate(sosValidation.trigger),
   asyncHandler(async (req, res) => {
-    const { latitude, longitude, locationAvailable = true } = req.body;
+    const { latitude, longitude, locationAvailable = true, message } = req.body;
     const userId = req.userId;
 
     const result = await sosService.triggerSOS(userId, {
       latitude,
       longitude,
       locationAvailable,
+      message,
     });
 
     res.status(200).json({
