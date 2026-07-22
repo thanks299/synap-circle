@@ -3,6 +3,11 @@ import { PHONE_REGEX, EMAIL_REGEX } from "../utils/regex.js";
 
 const userSchema = new mongoose.Schema(
   {
+    name: {
+      type: String,
+      trim: true,
+      maxlength: [100, "Name cannot exceed 100 characters"],
+    },
     phoneNumber: {
       type: String,
       unique: true,
@@ -42,11 +47,6 @@ const userSchema = new mongoose.Schema(
         },
         message: "Invalid profile picture URL",
       },
-    },
-    name: {
-      type: String,
-      trim: true,
-      maxlength: [100, "Name cannot exceed 100 characters"],
     },
     isVerified: {
       type: Boolean,

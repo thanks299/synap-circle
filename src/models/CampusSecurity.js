@@ -38,6 +38,11 @@ const campusSecuritySchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    universityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "University",
+      index: true,
+    },
     operatingHours: {
       type: String,
       trim: true,
@@ -50,5 +55,6 @@ const campusSecuritySchema = new mongoose.Schema(
 
 // Indexes
 campusSecuritySchema.index({ isActive: 1, isPrimary: 1 });
+campusSecuritySchema.index({ universityId: 1, isActive: 1 });
 
 export default mongoose.model("CampusSecurity", campusSecuritySchema);

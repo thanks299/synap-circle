@@ -200,23 +200,19 @@ const contactValidation = {
 const sosValidation = {
   trigger: [
     body("latitude")
-      .optional()
+      .notEmpty()
+      .withMessage("Location is required to send an SOS alert")
       .isFloat({ min: -90, max: 90 })
       .withMessage("Invalid latitude"),
     body("longitude")
-      .optional()
+      .notEmpty()
+      .withMessage("Location is required to send an SOS alert")
       .isFloat({ min: -180, max: 180 })
       .withMessage("Invalid longitude"),
     body("locationAvailable")
       .optional()
       .isBoolean()
       .withMessage("locationAvailable must be boolean"),
-    body("message")
-      .optional()
-      .isString()
-      .withMessage("Message must be a string")
-      .isLength({ max: 500 })
-      .withMessage("Message cannot exceed 500 characters"),
   ],
 
   cancel: [

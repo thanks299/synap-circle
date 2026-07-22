@@ -717,28 +717,24 @@ class EmailService {
   async sendBulkSOSAlerts(alertData) {
     try {
       const { contacts, ...baseData } = alertData;
-
-      const results = [];
-      for (const contact of contacts) {
-        try {
-          const result = await this.sendSOSAlert({
+      const results = await Promise.allSettled(
+        contacts.map((contact) =>
+          this.sendSOSAlert({
             ...baseData,
             contacts: [contact],
-          });
-          results.push({
-            contact,
-            success: true,
-            messageId: result.messageId,
-          });
-        } catch (error) {
-          results.push({
-            contact,
-            success: false,
-            error: error.message,
-          });
-        }
-      }
-      return results;
+          }),
+        ),
+      );
+
+      const formattedResults = results.map((result, index) => ({
+        contact: contacts[index],
+        success: result.status === "fulfilled",
+        messageId:
+          result.status === "fulfilled" ? result.value.messageId : null,
+        error: result.status === "rejected" ? result.reason.message : null,
+      }));
+
+      return formattedResults;
     } catch (error) {
       logger.error("Bulk alert email send error:", error);
       throw error;

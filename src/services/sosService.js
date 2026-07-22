@@ -1,5 +1,3 @@
-// src/services/sosService.js - FIXED
-
 import SOSAlert from "../models/SOSAlert.js";
 import TrustedContact from "../models/TrustedContact.js";
 import CampusSecurity from "../models/CampusSecurity.js";
@@ -21,12 +19,7 @@ class SOSService {
         throw error;
       }
 
-      const {
-        latitude,
-        longitude,
-        locationAvailable = true,
-        message,
-      } = locationData;
+      const { latitude, longitude, locationAvailable = true } = locationData;
 
       // Get user details
       const user = await User.findById(userId);
@@ -36,16 +29,28 @@ class SOSService {
         throw error;
       }
 
+      const FIXED_MESSAGE =
+        "Help me, I am in an unsafe environment and I feel unsafe, here's my live location.";
+
       // Get trusted contacts
       const trustedContacts = await TrustedContact.find({
         userId,
         isActive: true,
       });
 
-      // Get campus security contacts
-      const securityContacts = await CampusSecurity.find({
-        isActive: true,
-      });
+      let securityContacts = [];
+      if (user.universityId) {
+        // If user has a university, get security for that university
+        securityContacts = await CampusSecurity.find({
+          isActive: true,
+          universityId: user.universityId,
+        });
+      } else {
+        // If no university, get all security (fallback)
+        securityContacts = await CampusSecurity.find({
+          isActive: true,
+        });
+      }
 
       // Get emergency directory contacts
       const emergencyContacts = await EmergencyDirectory.find({
@@ -66,6 +71,14 @@ class SOSService {
         throw error;
       }
 
+      if (!latitude || !longitude) {
+        const error = new Error(
+          "Location is required to send an SOS alert. Please enable location services.",
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
       // Generate location link
       const locationLink =
         latitude && longitude
@@ -79,7 +92,7 @@ class SOSService {
         longitude: longitude || null,
         locationAvailable,
         locationLink,
-        message: message || null,
+        message: FIXED_MESSAGE,
         status: "sent",
         recipients: [],
         contactsNotified: [],
@@ -139,7 +152,7 @@ class SOSService {
         alertId: alert._id.toString(),
         isCancelled: false,
         timestamp: new Date().toISOString(),
-        message: message || null,
+        message: FIXED_MESSAGE,
         contacts: recipients.map((r) => ({
           email: r.email,
           name: r.name,
@@ -198,7 +211,7 @@ class SOSService {
           latitude,
           longitude,
           locationLink,
-          message,
+          message: FIXED_MESSAGE,
           timestamp: new Date().toISOString(),
         }),
       ).catch((err) => {
