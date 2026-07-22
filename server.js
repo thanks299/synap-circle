@@ -12,6 +12,7 @@ import authRoutes from "./src/routes/auth.js";
 import contactRoutes from "./src/routes/contacts.js";
 import emergencyRoutes from "./src/routes/emergency.js";
 import sosRoutes from "./src/routes/sos.js";
+import profileRoutes from "./src/routes/profile.js";
 import { errorHandler } from "./src/middlewares/errorHandler.js";
 import { globalLimiter } from "./src/middlewares/rateLimiter.js";
 import { logger } from "./src/utils/logger.js";
@@ -145,6 +146,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/contacts", contactRoutes);
 app.use("/api/emergency", emergencyRoutes);
 app.use("/api/sos", sosRoutes);
+app.use("/api/profile", profileRoutes);
 
 // 404 handler
 app.use((req, res) => {

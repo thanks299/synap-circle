@@ -1,3 +1,5 @@
+// src/services/sosService.js - FIXED
+
 import SOSAlert from "../models/SOSAlert.js";
 import TrustedContact from "../models/TrustedContact.js";
 import CampusSecurity from "../models/CampusSecurity.js";
@@ -18,6 +20,7 @@ class SOSService {
         error.statusCode = 401;
         throw error;
       }
+
       const {
         latitude,
         longitude,
@@ -44,17 +47,23 @@ class SOSService {
         isActive: true,
       });
 
+      // Get emergency directory contacts
+      const emergencyContacts = await EmergencyDirectory.find({
+        isActive: true,
+        isVerified: true,
+      }).limit(10);
+
       // Check if there are any recipients
-      if (trustedContacts.length === 0 && securityContacts.length === 0) {
+      if (
+        trustedContacts.length === 0 &&
+        securityContacts.length === 0 &&
+        emergencyContacts.length === 0
+      ) {
         const error = new Error(
           "No contacts available. Please add trusted contacts first.",
         );
         error.statusCode = 400;
         throw error;
-      }
-
-      if (message) {
-        alert.message = message;
       }
 
       // Generate location link
@@ -63,7 +72,7 @@ class SOSService {
           ? `https://www.google.com/maps?q=${latitude},${longitude}`
           : null;
 
-      // Create alert record
+      // Create alert record with message included
       const alert = await SOSAlert.create({
         userId,
         latitude: latitude || null,
@@ -103,6 +112,7 @@ class SOSService {
         });
       });
 
+      //Add emergency directory contacts
       emergencyContacts.forEach((emergency) => {
         recipients.push({
           type: "emergency_directory",
@@ -181,6 +191,19 @@ class SOSService {
       });
 
       await Promise.all(recipientPromises);
+
+      Promise.resolve(
+        emailService.sendSOSConfirmationToUser(userId, {
+          alertId: alert._id,
+          latitude,
+          longitude,
+          locationLink,
+          message,
+          timestamp: new Date().toISOString(),
+        }),
+      ).catch((err) => {
+        logger.error("SOS confirmation email failed:", err);
+      });
 
       // Calculate delivery stats
       const deliveredCount = notifications.filter((n) => n.delivered).length;

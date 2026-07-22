@@ -44,7 +44,7 @@ const sosAlertSchema = new mongoose.Schema(
         {
           type: {
             type: String,
-            enum: ["trusted_contact", "campus_security"],
+            enum: ["trusted_contact", "campus_security", "emergency_directory"],
           },
           name: String,
           email: String,
@@ -64,7 +64,7 @@ const sosAlertSchema = new mongoose.Schema(
         {
           type: {
             type: String,
-            enum: ["trusted_contact", "campus_security"],
+            enum: ["trusted_contact", "campus_security", "emergency_directory"],
           },
           recipientId: mongoose.Schema.Types.ObjectId,
           email: String,

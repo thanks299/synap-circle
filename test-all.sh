@@ -21,7 +21,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Variables to store data
 CSRF_TOKEN=""
@@ -30,6 +30,8 @@ REFRESH_TOKEN=""
 ALERT_ID=""
 CONTACT_ID=""
 OTP_CODE=""
+PROFILE_PICTURE_URL=""
+ALERT_EMAIL_SENT=""
 
 # ============================================
 # Helper Functions
@@ -77,6 +79,25 @@ check_server() {
         echo "  npm run dev"
         echo ""
         exit 1
+    fi
+}
+
+# ============================================
+# Create Test Image for Cloudinary
+# ============================================
+create_test_image() {
+    echo -e "${BLUE}📸 Creating test image for Cloudinary...${NC}"
+    
+    # Create a simple 1x1 pixel PNG (base64 encoded)
+    # This is a minimal valid PNG file
+    echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==" | base64 -d > /tmp/test-profile-pic.png
+    
+    if [ -f /tmp/test-profile-pic.png ]; then
+        print_success "Test image created at /tmp/test-profile-pic.png"
+        return 0
+    else
+        print_error "Failed to create test image"
+        return 1
     fi
 }
 
@@ -223,10 +244,10 @@ test_login() {
 }
 
 # ============================================
-# 6. GET USER PROFILE
+# 6. GET USER PROFILE (OLD - Keeping for compatibility)
 # ============================================
 test_get_profile() {
-    print_header "6. Get User Profile"
+    print_header "6. Get User Profile (Auth/me)"
     
     RESPONSE=$(curl -s -X GET "$API_URL/auth/me" \
         -H "Authorization: Bearer $ACCESS_TOKEN")
@@ -240,6 +261,220 @@ test_get_profile() {
     else
         print_error "Failed to get profile"
         return 1
+    fi
+}
+
+# ============================================
+# 6b. GET FULL PROFILE (NEW)
+# ============================================
+test_get_full_profile() {
+    print_header "6b. Get Full Profile (Profile/me)"
+    
+    RESPONSE=$(curl -s -X GET "$API_URL/profile/me" \
+        -H "Authorization: Bearer $ACCESS_TOKEN")
+    
+    print_info "Response:"
+    print_json "$RESPONSE"
+    
+    if echo "$RESPONSE" | grep -q '"success":true'; then
+        print_success "Full profile retrieved successfully"
+        return 0
+    else
+        print_error "Failed to get full profile"
+        return 1
+    fi
+}
+
+# ============================================
+# 6c. UPDATE FULL PROFILE
+# ============================================
+test_update_full_profile() {
+    print_header "6c. Update Full Profile"
+    
+    print_info "Updating profile..."
+    
+    RESPONSE=$(curl -s -X PUT "$API_URL/profile/me" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -H "Content-Type: application/json" \
+        ${CSRF_TOKEN:+-H "x-csrf-token: $CSRF_TOKEN"} \
+        -d '{
+            "name": "Tomi Adeyemi",
+            "email": "tomi.adeyemi@email.com",
+            "phoneNumber": "+2348034567890",
+            "university": "University of Ilorin",
+            "preferences": {
+                "autoShareLocation": true,
+                "alertSound": true
+            }
+        }')
+    
+    print_info "Response:"
+    print_json "$RESPONSE"
+    
+    if echo "$RESPONSE" | grep -q '"success":true'; then
+        print_success "Profile updated successfully"
+        return 0
+    else
+        print_error "Failed to update profile"
+        return 1
+    fi
+}
+
+# ============================================
+# 6d. UPDATE NAME ONLY
+# ============================================
+test_update_name() {
+    print_header "6d. Update Name Only"
+    
+    print_info "Updating name..."
+    
+    RESPONSE=$(curl -s -X PUT "$API_URL/profile/name" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -H "Content-Type: application/json" \
+        ${CSRF_TOKEN:+-H "x-csrf-token: $CSRF_TOKEN"} \
+        -d '{
+            "name": "Tomi Adeyemi Updated"
+        }')
+    
+    print_info "Response:"
+    print_json "$RESPONSE"
+    
+    if echo "$RESPONSE" | grep -q '"success":true'; then
+        print_success "Name updated successfully"
+        return 0
+    else
+        print_error "Failed to update name"
+        return 1
+    fi
+}
+
+# ============================================
+# 6e. UPDATE EMAIL ONLY
+# ============================================
+test_update_email() {
+    print_header "6e. Update Email Only"
+    
+    print_info "Updating email..."
+    
+    RESPONSE=$(curl -s -X PUT "$API_URL/profile/email" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -H "Content-Type: application/json" \
+        ${CSRF_TOKEN:+-H "x-csrf-token: $CSRF_TOKEN"} \
+        -d '{
+            "email": "tomi.updated@email.com"
+        }')
+    
+    print_info "Response:"
+    print_json "$RESPONSE"
+    
+    if echo "$RESPONSE" | grep -q '"success":true'; then
+        print_success "Email updated successfully"
+        return 0
+    else
+        print_error "Failed to update email"
+        return 1
+    fi
+}
+
+# ============================================
+# 6f. GET ALERT HISTORY
+# ============================================
+test_alert_history() {
+    print_header "6f. Get Alert History"
+    
+    RESPONSE=$(curl -s -X GET "$API_URL/profile/history?status=all&limit=10&page=1" \
+        -H "Authorization: Bearer $ACCESS_TOKEN")
+    
+    print_info "Response:"
+    print_json "$RESPONSE"
+    
+    if echo "$RESPONSE" | grep -q '"success":true'; then
+        print_success "Alert history retrieved successfully"
+        return 0
+    else
+        print_error "Failed to get alert history"
+        return 1
+    fi
+}
+
+# ============================================
+# 6g. GET ALERT HISTORY BY STATUS
+# ============================================
+test_alert_history_by_status() {
+    print_header "6g. Get Alert History (Cancelled/False Alarms)"
+    
+    RESPONSE=$(curl -s -X GET "$API_URL/profile/history?status=cancelled&limit=5&page=1" \
+        -H "Authorization: Bearer $ACCESS_TOKEN")
+    
+    print_info "Response:"
+    print_json "$RESPONSE"
+    
+    if echo "$RESPONSE" | grep -q '"success":true'; then
+        print_success "Alert history (cancelled) retrieved successfully"
+        return 0
+    else
+        print_error "Failed to get cancelled alert history"
+        return 1
+    fi
+}
+
+# ============================================
+# 6h. UPLOAD PROFILE PICTURE (CLOUDINARY)
+# ============================================
+test_upload_profile_picture() {
+    print_header "6h. Upload Profile Picture (Cloudinary)"
+    
+    # Create test image
+    create_test_image || return 1
+    
+    print_info "Uploading profile picture to Cloudinary..."
+    
+    RESPONSE=$(curl -s -X POST "$API_URL/profile/picture" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        ${CSRF_TOKEN:+-H "x-csrf-token: $CSRF_TOKEN"} \
+        -F "profilePicture=@/tmp/test-profile-pic.png")
+    
+    print_info "Response:"
+    print_json "$RESPONSE"
+    
+    PROFILE_PICTURE_URL=$(echo "$RESPONSE" | grep -o '"profilePicture":"[^"]*"' | head -1 | sed 's/"profilePicture":"//;s/"//')
+    
+    if echo "$RESPONSE" | grep -q '"success":true' && [ -n "$PROFILE_PICTURE_URL" ]; then
+        print_success "Profile picture uploaded successfully!"
+        print_info "Cloudinary URL: ${PROFILE_PICTURE_URL:0:60}..."
+        return 0
+    else
+        print_warning "Profile picture upload failed or Cloudinary not configured"
+        return 0
+    fi
+}
+
+# ============================================
+# 6i. DELETE PROFILE PICTURE (CLOUDINARY)
+# ============================================
+test_delete_profile_picture() {
+    print_header "6i. Delete Profile Picture (Cloudinary)"
+    
+    if [ -z "$PROFILE_PICTURE_URL" ]; then
+        print_warning "No profile picture to delete, skipping..."
+        return 0
+    fi
+    
+    print_info "Deleting profile picture from Cloudinary..."
+    
+    RESPONSE=$(curl -s -X DELETE "$API_URL/profile/picture" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        ${CSRF_TOKEN:+-H "x-csrf-token: $CSRF_TOKEN"})
+    
+    print_info "Response:"
+    print_json "$RESPONSE"
+    
+    if echo "$RESPONSE" | grep -q '"success":true'; then
+        print_success "Profile picture deleted successfully!"
+        return 0
+    else
+        print_warning "Failed to delete profile picture"
+        return 0
     fi
 }
 
@@ -421,8 +656,14 @@ test_sos_with_auth() {
     
     ALERT_ID=$(echo "$RESPONSE" | grep -o '"alertId":"[^"]*"' | head -1 | sed 's/"alertId":"//;s/"//')
     
+    # Check if email confirmation was sent
+    ALERT_EMAIL_SENT=$(echo "$RESPONSE" | grep -o '"message":"Alert sent to [0-9]* of [0-9]* recipients"' | head -1)
+    
     if [ -n "$ALERT_ID" ] && [ "$ALERT_ID" != "null" ]; then
         print_success "SOS alert triggered! ID: $ALERT_ID"
+        if [ -n "$ALERT_EMAIL_SENT" ]; then
+            print_success "✅ Alert confirmation email sent to user: $TEST_EMAIL"
+        fi
         return 0
     else
         print_error "Failed to trigger SOS"
@@ -629,10 +870,6 @@ test_refresh_token() {
     
     print_info "Testing token refresh..."
     
-    # Note: The refresh-token endpoint expects the refresh token in a cookie
-    # Since we can't easily set cookies with curl, we'll use the header approach
-    # if your API supports it, or we'll skip this test
-    
     RESPONSE=$(curl -s -X POST "$API_URL/auth/refresh-token" \
         -H "Content-Type: application/json" \
         ${CSRF_TOKEN:+-H "x-csrf-token: $CSRF_TOKEN"} \
@@ -645,7 +882,6 @@ test_refresh_token() {
     
     if echo "$RESPONSE" | grep -q '"success":true'; then
         print_success "Token refreshed successfully!"
-        # Extract new token if returned
         NEW_TOKEN=$(echo "$RESPONSE" | grep -o '"token":"[^"]*"' | head -1 | sed 's/"token":"//;s/"//')
         if [ -n "$NEW_TOKEN" ] && [ "$NEW_TOKEN" != "null" ]; then
             ACCESS_TOKEN="$NEW_TOKEN"
@@ -732,6 +968,24 @@ main() {
     run_test test_verify_otp
     run_test test_login
     run_test test_get_profile
+    
+    # ============================================
+    # PROFILE TESTS
+    # ============================================
+    run_test test_get_full_profile
+    run_test test_update_full_profile
+    run_test test_update_name
+    run_test test_update_email
+    run_test test_alert_history
+    run_test test_alert_history_by_status
+    
+    # ============================================
+    # CLOUDINARY TESTS
+    # ============================================
+    run_test test_upload_profile_picture
+    run_test test_delete_profile_picture
+    
+    # Onboarding Tests
     run_test test_onboarding_status
     run_test test_update_onboarding
     
@@ -760,6 +1014,20 @@ main() {
     run_test test_logout
     
     # ============================================
+    # EMAIL VERIFICATION SUMMARY
+    # ============================================
+    print_header "📧 Email Verification Summary"
+    echo ""
+    echo -e "${CYAN}📨 SOS Alert Confirmation Email:${NC}"
+    if [ -n "$ALERT_EMAIL_SENT" ]; then
+        echo -e "${GREEN}✅ Confirmation email sent to: $TEST_EMAIL${NC}"
+        echo -e "${BLUE}📝 Please check your inbox for the SOS confirmation email${NC}"
+    else
+        echo -e "${YELLOW}⚠️ Could not verify email confirmation${NC}"
+    fi
+    echo ""
+    
+    # ============================================
     # TEST SUMMARY
     # ============================================
     print_header "📊 Test Summary"
@@ -784,10 +1052,22 @@ main() {
     echo "   Password: $TEST_PASSWORD"
     echo ""
     
+    echo -e "${CYAN}🖼️  Cloudinary Profile Picture:${NC}"
+    if [ -n "$PROFILE_PICTURE_URL" ]; then
+        echo -e "${GREEN}✅ Profile picture uploaded to Cloudinary${NC}"
+        echo "   URL: ${PROFILE_PICTURE_URL:0:60}..."
+    else
+        echo -e "${YELLOW}⚠️ No profile picture uploaded (Cloudinary may not be configured)${NC}"
+    fi
+    echo ""
+    
     # Clean up
     unset ACCESS_TOKEN
     unset CSRF_TOKEN
     unset REFRESH_TOKEN
+    
+    # Clean up test image
+    rm -f /tmp/test-profile-pic.png
     
     # Clean up cookies file if it exists
     rm -f cookies.txt

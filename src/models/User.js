@@ -36,6 +36,12 @@ const userSchema = new mongoose.Schema(
     profilePicture: {
       type: String,
       trim: true,
+      validate: {
+        validator: function (v) {
+          return !v || v.startsWith("https://res.cloudinary.com/");
+        },
+        message: "Invalid profile picture URL",
+      },
     },
     name: {
       type: String,

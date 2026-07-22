@@ -1277,6 +1277,586 @@ class EmailService {
       };
     }
   }
+
+  /**
+   * Send profile completion email
+   * Sent when user completes all onboarding steps
+   */
+  async sendProfileCompletionEmail(user) {
+    try {
+      if (config.isTest && config.disableEmailSending) {
+        console.log(`📧 [TEST] Profile completion email to ${user.email}`);
+        return {
+          success: true,
+          message: "Profile completion email sent (test mode)",
+        };
+      }
+
+      const sendSmtpEmail = new brevo.SendSmtpEmail();
+      sendSmtpEmail.subject = "✅ Profile Complete - You're Ready to Go!";
+      sendSmtpEmail.htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: #f4f6f5;
+            padding: 20px;
+            margin: 0;
+          }
+          .container {
+            max-width: 600px;
+            width: 100%;
+            box-sizing: border-box;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+          }
+          .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 30px;
+          }
+          .brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 18px;
+            font-weight: 700;
+            color: #0d7377;
+          }
+          .brand .icon {
+            width: 22px;
+            height: 28px;
+            vertical-align: middle;
+          }
+          .eyebrow {
+            color: #9aa1a0;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+          }
+          .success-box {
+            background-color: #e8f5e9;
+            border: 1px solid #c8e6c9;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+            margin: 25px 0;
+          }
+          .success-box h2 {
+            margin: 0;
+            font-size: 22px;
+            color: #2e7d32;
+          }
+          .success-box p {
+            color: #555;
+            margin-top: 8px;
+          }
+          .checklist {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+          }
+          .checklist-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+          }
+          .checklist-item:last-child {
+            border-bottom: none;
+          }
+          .check-icon {
+            color: #2e7d32;
+            font-size: 20px;
+            margin-right: 15px;
+          }
+          .checklist-text {
+            flex: 1;
+          }
+          .checklist-text h4 {
+            margin: 0;
+            color: #333;
+          }
+          .checklist-text p {
+            margin: 4px 0 0;
+            color: #666;
+            font-size: 14px;
+          }
+          .cta-button {
+            display: inline-block;
+            background-color: #0d7377;
+            color: white;
+            padding: 14px 30px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            margin-top: 20px;
+          }
+          .footer {
+            color: #999;
+            font-size: 12px;
+            margin-top: 30px;
+            border-top: 1px solid #eef1f0;
+            padding-top: 20px;
+          }
+          .footer .team {
+            color: #666;
+            font-size: 13px;
+            margin-bottom: 8px;
+          }
+
+          @media only screen and (max-width: 480px) {
+            body { padding: 12px; }
+            .container { padding: 24px 20px; border-radius: 8px; }
+            .header { flex-wrap: wrap; row-gap: 8px; }
+            .brand { font-size: 16px; }
+            .eyebrow { font-size: 10px; }
+            .success-box { padding: 20px 15px; }
+            .success-box h2 { font-size: 19px; }
+            .checklist { padding: 14px; }
+            .cta-button { display: block; width: 100%; box-sizing: border-box; padding: 14px 20px; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="brand">🛡️ SafeWalk Campus</div>
+            <div class="eyebrow">Profile Complete</div>
+          </div>
+
+          <div class="success-box">
+            <h2>✅ Profile Complete!</h2>
+            <p>Your safety setup is ready. You can now use SafeWalk Campus.</p>
+          </div>
+
+          <h3 style="color: #333;">What's been set up:</h3>
+
+          <div class="checklist">
+            <div class="checklist-item">
+              <div class="check-icon">✅</div>
+              <div class="checklist-text">
+                <h4>University Selected</h4>
+                <p>${user.selectedUniversity || "Your university has been linked"}</p>
+              </div>
+            </div>
+            <div class="checklist-item">
+              <div class="check-icon">✅</div>
+              <div class="checklist-text">
+                <h4>Trusted Contacts Added</h4>
+                <p>Your trusted contacts are ready to receive alerts</p>
+              </div>
+            </div>
+            <div class="checklist-item">
+              <div class="check-icon">✅</div>
+              <div class="checklist-text">
+                <h4>Location Permission Enabled</h4>
+                <p>Your location can be shared during emergencies</p>
+              </div>
+            </div>
+          </div>
+
+          <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 4px; margin: 20px 0;">
+            <p style="margin: 0; color: #856404;">
+              <strong>💡 Tip:</strong> You can always update your profile and contacts from the app settings.
+            </p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="#" class="cta-button">🚀 Open SafeWalk Campus</a>
+          </div>
+
+          <div class="footer">
+            <div class="team"><strong>The SafeWalk Campus Team</strong></div>
+            <div>This is an automated message. Please do not reply.</div>
+            <div style="margin-top: 10px; color: #999;">Need help? Contact support: support@safewalk-campus.com</div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+      sendSmtpEmail.textContent = `
+      ✅ Profile Complete - You're Ready to Go!
+
+      Your safety setup is ready. You can now use SafeWalk Campus.
+
+      What's been set up:
+      ✅ University Selected - ${user.selectedUniversity || "Your university has been linked"}
+      ✅ Trusted Contacts Added - Your trusted contacts are ready to receive alerts
+      ✅ Location Permission Enabled - Your location can be shared during emergencies
+
+      💡 Tip: You can always update your profile and contacts from the app settings.
+
+      ---
+      SafeWalk Campus - Emergency Alert System
+      This is an automated message. Please do not reply.
+      Need help? Contact support: support@safewalk-campus.com
+    `;
+
+      sendSmtpEmail.sender = {
+        name: this.senderName,
+        email: this.fromEmail,
+      };
+      sendSmtpEmail.to = [
+        { email: user.email, name: user.name || user.phoneNumber },
+      ];
+      sendSmtpEmail.replyTo = {
+        email: this.fromEmail,
+        name: "SafeWalk Campus Support",
+      };
+
+      const result = await this.apiInstance.sendTransacEmail(sendSmtpEmail);
+
+      logger.info(
+        `Profile completion email sent to ${user.email}: ${result.messageId}`,
+      );
+
+      return {
+        success: true,
+        messageId: result.messageId,
+        message: "Profile completion email sent successfully",
+      };
+    } catch (error) {
+      logger.error("Profile completion email send error:", error);
+      return {
+        success: false,
+        message: "Failed to send profile completion email",
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Send SOS Alert Confirmation to User
+   * Sent to the user who triggered the alert
+   */
+  async sendSOSConfirmationToUser(userId, alertData) {
+    try {
+      const { alertId, latitude, longitude, locationLink, message, timestamp } =
+        alertData;
+
+      const user = await User.findById(userId);
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      if (config.isTest && config.disableEmailSending) {
+        console.log(`📧 [TEST] SOS confirmation email to ${user.email}`);
+        return {
+          success: true,
+          message: "SOS confirmation email sent (test mode)",
+        };
+      }
+
+      const sendSmtpEmail = new brevo.SendSmtpEmail();
+      sendSmtpEmail.subject = "🚨 SOS Alert Confirmation - Help is on the way!";
+      sendSmtpEmail.htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: #f4f6f5;
+            padding: 20px;
+            margin: 0;
+          }
+          .container {
+            max-width: 600px;
+            width: 100%;
+            box-sizing: border-box;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+          }
+          .header {
+            background: #ff4444;
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+            margin: -40px -40px 30px -40px;
+            border-radius: 12px 12px 0 0;
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 28px;
+          }
+          .header .sub {
+            font-size: 16px;
+            opacity: 0.9;
+            margin-top: 8px;
+          }
+          .confirm-box {
+            background-color: #e8f5e9;
+            border: 1px solid #c8e6c9;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+          }
+          .confirm-box .big-check {
+            font-size: 48px;
+            display: block;
+          }
+          .info-box {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ff4444;
+          }
+          .info-box label {
+            font-weight: bold;
+            color: #555;
+            display: block;
+            margin-bottom: 4px;
+            font-size: 14px;
+          }
+          .info-box .value {
+            font-size: 16px;
+            color: #222;
+          }
+          .location-box {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: center;
+          }
+          .location-box a {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 0;
+          }
+          .recipients-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+          }
+          .recipient-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+          }
+          .recipient-item:last-child {
+            border-bottom: none;
+          }
+          .status-badge {
+            display: inline-block;
+            background: #4CAF50;
+            color: white;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-left: 8px;
+          }
+          .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+          }
+          .action-button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            cursor: pointer;
+          }
+          .action-call {
+            background: #4CAF50;
+            color: white;
+          }
+          .action-cancel {
+            background: #ff9800;
+            color: white;
+          }
+          .footer {
+            color: #999;
+            font-size: 12px;
+            margin-top: 30px;
+            border-top: 1px solid #eef1f0;
+            padding-top: 20px;
+          }
+          .footer .team {
+            color: #666;
+            font-size: 13px;
+            margin-bottom: 8px;
+          }
+
+          @media only screen and (max-width: 480px) {
+            body { padding: 12px; }
+            .container { padding: 20px 15px; }
+            .header { margin: -20px -15px 20px -15px; padding: 20px; border-radius: 8px 8px 0 0; }
+            .header h1 { font-size: 22px; }
+            .action-buttons { flex-direction: column; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🚨 SOS Alert Sent</h1>
+            <div class="sub">Help is on the way! Your alert has been dispatched.</div>
+          </div>
+
+          <div class="confirm-box">
+            <span class="big-check">✅</span>
+            <h3 style="margin: 10px 0 5px; color: #2e7d32;">Alert Sent Successfully</h3>
+            <p style="margin: 0; color: #555;">Your emergency contacts have been notified.</p>
+          </div>
+
+          <div class="info-box">
+            <label>🆔 Alert ID</label>
+            <div class="value">${alertId}</div>
+          </div>
+
+          <div class="info-box">
+            <label>🕐 Time Sent</label>
+            <div class="value">${timestamp || new Date().toLocaleString()}</div>
+          </div>
+
+          ${
+            message
+              ? `
+          <div class="info-box" style="border-left-color: #ff9800;">
+            <label>💬 Your Message</label>
+            <div class="value">"${message}"</div>
+          </div>
+          `
+              : ""
+          }
+
+          <div class="location-box">
+            <h4 style="margin: 0 0 8px; color: #333;">📍 Your Location</h4>
+            ${
+              latitude && longitude
+                ? `
+              <a href="${locationLink || `https://www.google.com/maps?q=${latitude},${longitude}`}" target="_blank">
+                📍 View on Google Maps
+              </a>
+              <p style="font-size: 14px; color: #666; margin-top: 8px;">
+                Coordinates: ${latitude}, ${longitude}
+              </p>
+            `
+                : `
+              <p style="color: #ff9800;">⚠️ Location could not be determined</p>
+            `
+            }
+          </div>
+
+          <div class="recipients-box">
+            <h4 style="margin: 0 0 12px;">📨 Alert Sent To:</h4>
+            <div class="recipient-item">
+              <strong>University Security</strong>
+              <span class="status-badge">✅ Notified</span>
+            </div>
+            <div class="recipient-item">
+              <strong>Emergency Directory</strong>
+              <span class="status-badge">✅ Notified</span>
+            </div>
+            <div class="recipient-item">
+              <strong>Your Trusted Contacts</strong>
+              <span class="status-badge">✅ Notified</span>
+            </div>
+          </div>
+
+          <div style="background: #fff3cd; border-left: 4px solid #ff9800; padding: 15px; border-radius: 4px; margin: 20px 0;">
+            <p style="margin: 0; color: #856404;">
+              <strong>⚠️ False Alarm?</strong> If this was a mistake, you can cancel the alert from the app within 5 minutes.
+            </p>
+          </div>
+
+          <div class="action-buttons">
+            <a href="tel:${user.phoneNumber}" class="action-button action-call">📞 Call Emergency</a>
+            <a href="#" class="action-button action-cancel">🔴 Cancel Alert</a>
+          </div>
+
+          <div class="footer">
+            <div class="team"><strong>The SafeWalk Campus Team</strong></div>
+            <div>This is an automated message. Please do not reply.</div>
+            <div style="margin-top: 10px; color: #999;">Need help? Contact support: support@safewalk-campus.com</div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+      sendSmtpEmail.textContent = `
+      🚨 SOS ALERT CONFIRMATION - Help is on the way!
+
+      Alert ID: ${alertId}
+      Time Sent: ${timestamp || new Date().toLocaleString()}
+      ${message ? `Message: "${message}"` : ""}
+
+      Location: ${locationLink || (latitude && longitude ? `https://www.google.com/maps?q=${latitude},${longitude}` : "Location not available")}
+
+      This alert has been sent to:
+      ✅ University Security
+      ✅ Emergency Directory
+      ✅ Your Trusted Contacts
+
+      ⚠️ False Alarm? If this was a mistake, you can cancel the alert from the app within 5 minutes.
+
+      ---
+      SafeWalk Campus - Emergency Alert System
+      This is an automated message. Please do not reply.
+    `;
+
+      sendSmtpEmail.sender = {
+        name: this.senderName,
+        email: this.fromEmail,
+      };
+      sendSmtpEmail.to = [
+        { email: user.email, name: user.name || user.phoneNumber },
+      ];
+      sendSmtpEmail.replyTo = {
+        email: this.fromEmail,
+        name: "SafeWalk Campus Support",
+      };
+
+      const result = await this.apiInstance.sendTransacEmail(sendSmtpEmail);
+
+      logger.info(
+        `SOS confirmation email sent to ${user.email}: ${result.messageId}`,
+      );
+
+      return {
+        success: true,
+        messageId: result.messageId,
+        message: "SOS confirmation email sent successfully",
+      };
+    } catch (error) {
+      logger.error("SOS confirmation email send error:", error);
+      return {
+        success: false,
+        message: "Failed to send SOS confirmation email",
+        error: error.message,
+      };
+    }
+  }
 }
 
 export default new EmailService();

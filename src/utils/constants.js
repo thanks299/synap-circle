@@ -39,6 +39,7 @@ const constants = {
   RECIPIENT_TYPES: {
     TRUSTED_CONTACT: "trusted_contact",
     CAMPUS_SECURITY: "campus_security",
+    EMERGENCY_DIRECTORY: "emergency_directory",
   },
 
   // Cancellation reasons
