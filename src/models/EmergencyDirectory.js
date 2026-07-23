@@ -29,8 +29,22 @@ const emergencyDirectorySchema = new mongoose.Schema(
       trim: true,
     },
     coordinates: {
-      latitude: Number,
-      longitude: Number,
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
+      },
+      coordinates: {
+        type: [Number],
+        index: "2dsphere",
+        default: [0, 0],
+      },
+    },
+    latitude: {
+      type: Number,
+    },
+    longitude: {
+      type: Number,
     },
     isVerified: {
       type: Boolean,
@@ -49,7 +63,7 @@ const emergencyDirectorySchema = new mongoose.Schema(
       trim: true,
     },
     distance: {
-      type: Number, // in meters
+      type: Number,
       default: 0,
     },
   },
@@ -58,8 +72,16 @@ const emergencyDirectorySchema = new mongoose.Schema(
   },
 );
 
-// Indexes
-emergencyDirectorySchema.index({ type: 1, isVerified: 1 });
+// Create 2dsphere index for geospatial queries
 emergencyDirectorySchema.index({ coordinates: "2dsphere" });
+emergencyDirectorySchema.index({ type: 1, isVerified: 1 });
+
+emergencyDirectorySchema.virtual("lat").get(function () {
+  return this.coordinates?.coordinates?.[1] || this.latitude || 0;
+});
+
+emergencyDirectorySchema.virtual("lng").get(function () {
+  return this.coordinates?.coordinates?.[0] || this.longitude || 0;
+});
 
 export default mongoose.model("EmergencyDirectory", emergencyDirectorySchema);

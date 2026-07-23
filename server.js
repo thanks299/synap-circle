@@ -143,10 +143,10 @@ app.get("/health", (req, res) => {
 
 // API Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/profile", profileRoutes);
 app.use("/api/contacts", contactRoutes);
 app.use("/api/emergency", emergencyRoutes);
 app.use("/api/sos", sosRoutes);
-app.use("/api/profile", profileRoutes);
 
 // 404 handler
 app.use((req, res) => {
